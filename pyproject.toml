@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "telegram-tui"
+version = "0.1.0"
+description = "A terminal Telegram client built with Textual (mock engine included)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=0.80",
+    "rich>=13.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+telegram-tui = "telegram_tui.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/telegram_tui"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
