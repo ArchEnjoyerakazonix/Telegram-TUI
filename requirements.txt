@@ -1,3 +1,4 @@
 textual>=0.80
 rich>=13.0
 pydantic>=2.0
+telethon>=1.36

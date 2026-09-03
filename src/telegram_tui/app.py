@@ -8,7 +8,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.message import Message
+from textual.message import Message as TextualMessage
 from textual.widgets import Footer, Header, Input, ListView
 
 from .auth import LoginScreen
@@ -24,7 +24,7 @@ from .widgets.composer import Composer
 TICK_SECONDS = 6.0
 
 
-class BackendIncoming(Message):
+class BackendIncoming(TextualMessage):
     """Incoming message delivered by a live backend."""
 
     def __init__(self, message: Message) -> None:

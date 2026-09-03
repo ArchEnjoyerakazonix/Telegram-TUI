@@ -165,3 +165,21 @@ async def test_escape_cancels_login_and_exits(live_app):
     assert isinstance(app.screen, LoginScreen)
     await pilot.press("escape")
     assert await wait_until(pilot, lambda: not app.is_running)
+
+
+def test_backend_incoming_event():
+    from datetime import datetime
+    from telegram_tui.app import BackendIncoming
+    from telegram_tui.models import Message as ModelMessage
+    from textual.message import Message as TextualMessage
+
+    msg = ModelMessage(
+        id=999,
+        chat_id=1,
+        sender_id=42,
+        text="Hello live",
+        timestamp=datetime.now(),
+    )
+    event = BackendIncoming(msg)
+    assert isinstance(event, TextualMessage)
+    assert event.message.text == "Hello live"
