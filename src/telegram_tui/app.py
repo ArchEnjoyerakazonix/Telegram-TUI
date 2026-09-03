@@ -200,7 +200,9 @@ class TelegramTUI(App[None]):
 
     @on(Input.Submitted, "#msg-search")
     def msg_search_submitted(self, event: Input.Submitted) -> None:
-        self.query_one(ChatView).action_next_hit()
+        view = self.query_one(ChatView)
+        view.action_next_hit()
+        view.focus()
 
     def action_search_in_chat(self) -> None:
         search = self.query_one("#msg-search", Input)
@@ -296,7 +298,8 @@ class TelegramTUI(App[None]):
                 return
             self.query_one(ChatList).focus()
             return
-        if focused and focused.id == "msg-search":
+        msg_search = self.query_one("#msg-search", Input)
+        if msg_search.display:
             self.hide_msg_search()
             self.query_one(ChatView).focus()
             return

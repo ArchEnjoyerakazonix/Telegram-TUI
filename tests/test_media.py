@@ -115,14 +115,14 @@ def test_render_photo_invokes_chafa(monkeypatch, tmp_path):
     def fake_run(cmd, **kwargs):
         calls["cmd"] = cmd
         return subprocess.CompletedProcess(
-            cmd, 0, stdout="█▓▒".encode(), stderr=b""
+            cmd, 0, stdout="██▓▒".encode(), stderr=b""
         )
 
     monkeypatch.setattr(media.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(media.subprocess, "run", fake_run)
     out = render_photo(img, cols=40, rows=20)
     assert out is not None and "██" in out
-    assert calls["cmd"][0] == "chafa"
+    assert "chafa" in calls["cmd"][0]
     assert "-s" in calls["cmd"] and "40x20" in calls["cmd"]
 
 

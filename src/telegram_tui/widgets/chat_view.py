@@ -132,7 +132,7 @@ class MessageWidget(Vertical):
             yield PhotoWidget(self.message, self.app.engine)
 
     def set_selected(self, selected: bool) -> None:
-        self.toggle_class("-selected", selected)
+        self.set_class(selected, "-selected")
 
     @staticmethod
     def _split_text(text: str) -> list[dict]:
@@ -228,7 +228,7 @@ class ChatView(VerticalScroll):
         for i, w in enumerate(widgets):
             w.set_selected(i == index)
         self._selected = index
-        self.scroll_to_widget(widgets[index], animate=False, edge="nearest")
+        self.scroll_to_widget(widgets[index], animate=False)
 
     def action_sel_next(self) -> None:
         self.select(self._selected + 1)
@@ -278,7 +278,7 @@ class ChatView(VerticalScroll):
 
     def _scroll_to_hit(self, index: int) -> None:
         self.hit_index = index % len(self.hits)
-        self.scroll_to_widget(self.hits[self.hit_index], animate=False, edge="center")
+        self.scroll_to_widget(self.hits[self.hit_index], animate=False, center=True)
 
     def action_next_hit(self) -> None:
         if self.hits:

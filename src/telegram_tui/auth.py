@@ -22,7 +22,7 @@ class LoginScreen(ModalScreen[bool]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     DEFAULT_CSS = """
-    LoginScreen { align: center middle; background: $screen 60%; }
+    LoginScreen { align: center middle; background: $background 60%; }
     #auth-box {
         width: 64;
         height: auto;
@@ -57,13 +57,13 @@ class LoginScreen(ModalScreen[bool]):
         self.query_one(Input).focus()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "auth-input" or event.input.readonly:
+        if event.input.id != "auth-input" or event.input.disabled:
             return
         value = event.value.strip()
         error = self.query_one("#auth-error", Static)
         if not value:
             return
-        event.input.readonly = True
+        event.input.disabled = True
         error.update("…")
         try:
             if self.step == "phone":
@@ -81,7 +81,7 @@ class LoginScreen(ModalScreen[bool]):
                 await self._finish()
         except Exception as exc:  # noqa: BLE001 - show any backend error inline
             error.update(f"Ошибка: {exc}")
-            event.input.readonly = False
+            event.input.disabled = False
             event.input.focus()
 
     def _switch(self, step: str) -> None:
@@ -96,7 +96,7 @@ class LoginScreen(ModalScreen[bool]):
         inp.value = ""
         inp.placeholder = placeholder
         inp.password = password
-        inp.readonly = False
+        inp.disabled = False
         inp.focus()
 
     async def _finish(self) -> None:

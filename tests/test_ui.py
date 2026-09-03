@@ -267,6 +267,7 @@ async def test_reply_hotkey_r_quotes_message(app):
     app.open_chat(chat_id, force=True)
     await pilot.pause()
     view = app.query_one(ChatView)
+    view.focus()
     view.action_sel_first()
     await pilot.pause()
     target_id = view.selected_message().id

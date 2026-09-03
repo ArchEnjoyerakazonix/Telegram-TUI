@@ -106,19 +106,20 @@ async def live_app():
 async def test_login_screen_appears_for_live_backend(live_app):
     app, _pilot, _backend = live_app
     assert isinstance(app.screen, LoginScreen)
-    assert app.query_one(ChatList).children == []
+    assert len(app.query_one(ChatList).children) == 0
 
 
 async def test_full_login_without_2fa(live_app):
     app, pilot, backend = live_app
     await pilot.press(*"89990001122")
     await pilot.press("enter")
-    assert await wait_until(pilot, lambda: any(c[0] == "code" for c in backend.calls))
+    assert await wait_until(pilot, lambda: any(c[0] == "phone" for c in backend.calls))
+    assert await wait_until(pilot, lambda: app.screen.step == "code")
     await pilot.press(*"12345")
     await pilot.press("enter")
     assert await wait_until(pilot, lambda: backend.loaded)
     assert await wait_until(pilot, lambda: app.current_chat_id == 1)
-    assert app.query_one(ChatList).children, "чаты должны появиться после входа"
+    assert len(app.query_one(ChatList).children) > 0, "чаты должны появиться после входа"
     assert backend.calls == [("phone", "89990001122"), ("code", "12345")]
 
 
@@ -127,11 +128,12 @@ async def test_login_with_2fa_password_step(live_app):
     backend.two_fa = True
     await pilot.press(*"89990001122")
     await pilot.press("enter")
-    assert await wait_until(pilot, lambda: any(c[0] == "code" for c in backend.calls))
+    assert await wait_until(pilot, lambda: any(c[0] == "phone" for c in backend.calls))
+    assert await wait_until(pilot, lambda: app.screen.step == "code")
     await pilot.press(*"12345")
     await pilot.press("enter")
     assert await wait_until(pilot, lambda: app.screen.step == "password")
-    inp = app.query_one("#auth-input")
+    inp = app.screen.query_one("#auth-input")
     assert inp.password is True, "пароль должен вводиться скрыто"
     await pilot.press(*"hunter2")
     await pilot.press("enter")
@@ -144,14 +146,15 @@ async def test_wrong_code_shows_error_and_allows_retry(live_app):
     app, pilot, backend = live_app
     await pilot.press(*"89990001122")
     await pilot.press("enter")
-    assert await wait_until(pilot, lambda: any(c[0] == "code" for c in backend.calls))
+    assert await wait_until(pilot, lambda: any(c[0] == "phone" for c in backend.calls))
+    assert await wait_until(pilot, lambda: app.screen.step == "code")
     await pilot.press(*"00000")
     await pilot.press("enter")
     assert await wait_until(
-        pilot, lambda: "Ошибка" in str(app.query_one("#auth-error").renderable)
+        pilot, lambda: "Ошибка" in str(app.screen.query_one("#auth-error").content)
     )
     # Input is editable again and a good code completes the login.
-    assert app.query_one("#auth-input").readonly is False
+    assert app.screen.query_one("#auth-input").disabled is False
     await pilot.press(*"12345")
     await pilot.press("enter")
     assert await wait_until(pilot, lambda: backend.loaded)

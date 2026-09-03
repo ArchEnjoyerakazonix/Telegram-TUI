@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ENV_MODE = "TG_TUI_MODE"
 ENV_API_ID = "TG_TUI_API_ID"
@@ -47,6 +47,15 @@ class Config(BaseModel):
     media_player: str = "mpv"
     photo_renderer: str = "chafa"
     traffic_interval: float = Field(default=6.0, gt=0)
+
+    @model_validator(mode="after")
+    def validate_live_credentials(self) -> "Config":
+        if self.mode == "live":
+            if self.api_id is None:
+                raise ValueError("В режиме live обязательно указать api_id")
+            if not self.api_hash:
+                raise ValueError("В режиме live обязательно указать api_hash")
+        return self
 
     @classmethod
     def load(
