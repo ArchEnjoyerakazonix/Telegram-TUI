@@ -41,3 +41,5 @@ class Message(BaseModel):
     text: str
     timestamp: dt.datetime = Field(default_factory=utcnow)
     reply_to: int | None = None
+    has_voice: bool = False
+    has_photo: bool = False

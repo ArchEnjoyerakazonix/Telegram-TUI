@@ -92,6 +92,9 @@ async def test_ctrl_up_down_cycles_panels(app):
     app, pilot = app
     await pilot.press("ctrl+down")
     await pilot.pause()
+    assert isinstance(app.focused, ChatView)
+    await pilot.press("ctrl+down")
+    await pilot.pause()
     assert isinstance(app.focused, Composer)
     await pilot.press("ctrl+down")
     await pilot.pause()
@@ -109,7 +112,7 @@ async def test_send_message_with_enter(app):
     view = app.query_one(ChatView)
     chat_id = view.chat_id
     before = len(app.engine.history(chat_id))
-    await pilot.press("ctrl+down")  # focus composer
+    await pilot.press("ctrl+down", "ctrl+down")  # focus composer (past messages)
     await pilot.press(*"привет, мир")
     await pilot.pause()
     await pilot.press("enter")
@@ -125,7 +128,7 @@ async def test_send_message_with_enter(app):
 
 async def test_multiline_composer_alt_enter_newline(app):
     app, pilot = app
-    await pilot.press("ctrl+down")
+    await pilot.press("ctrl+down", "ctrl+down")
     await pilot.press("a")
     await pilot.press("alt+enter")
     await pilot.press("b")
@@ -142,7 +145,7 @@ async def test_empty_composer_enter_does_not_send(app):
     app, pilot = app
     chat_id = app.current_chat_id
     before = len(app.engine.history(chat_id))
-    await pilot.press("ctrl+down")
+    await pilot.press("ctrl+down", "ctrl+down")
     await pilot.press("enter")
     await pilot.pause()
     assert len(app.engine.history(chat_id)) == before
@@ -217,3 +220,157 @@ async def test_resize_keeps_unread_badges_visible(app):
     item = app.query_one(ChatList).item_by_chat(other.id)
     assert item is not None
     assert app.engine.chats[other.id].unread > 0
+
+
+# -- vim navigation -------------------------------------------------------------
+
+
+async def test_vim_jk_moves_chat_list(app):
+    app, pilot = app
+    chat_list = app.query_one(ChatList)
+    start = chat_list.index
+    await pilot.press("j")
+    await pilot.pause()
+    assert chat_list.index == start + 1
+    await pilot.press("k")
+    await pilot.pause()
+    assert chat_list.index == start
+
+
+async def test_vim_navigation_selects_messages(app):
+    app, pilot = app
+    await pilot.press("ctrl+down")  # focus message history
+    await pilot.pause()
+    view = app.query_one(ChatView)
+    view.action_sel_first()
+    await pilot.pause()
+    widgets = view._widgets()
+    assert widgets[0].has_class("-selected")
+    await pilot.press("j")
+    await pilot.pause()
+    assert widgets[1].has_class("-selected")
+    assert not widgets[0].has_class("-selected")
+    await pilot.press("k")
+    await pilot.pause()
+    assert widgets[0].has_class("-selected")
+    await pilot.press("G")
+    await pilot.pause()
+    assert widgets[-1].has_class("-selected")
+
+
+# -- reply by 'r' ------------------------------------------------------------
+
+
+async def test_reply_hotkey_r_quotes_message(app):
+    app, pilot = app
+    chat_id = next(c.id for c in app.engine.chats.values() if c.title == "Python Chat")
+    app.open_chat(chat_id, force=True)
+    await pilot.pause()
+    view = app.query_one(ChatView)
+    view.action_sel_first()
+    await pilot.pause()
+    target_id = view.selected_message().id
+
+    await pilot.press("r")
+    await pilot.pause()
+    assert app.pending_reply == (chat_id, target_id)
+    assert isinstance(app.focused, Composer)
+    assert "↱" in str(app.query_one(Composer).border_title)
+
+    await pilot.press(*"отвечаю")
+    await pilot.press("enter")
+    await pilot.pause()
+    last = app.engine.history(chat_id)[-1]
+    assert last.text == "отвечаю"
+    assert last.reply_to == target_id
+    assert app.pending_reply is None
+    assert not str(app.query_one(Composer).border_title)
+
+
+async def test_escape_cancels_pending_reply(app):
+    app, pilot = app
+    await pilot.press("ctrl+down")
+    await pilot.press("r")
+    await pilot.pause()
+    assert app.pending_reply is not None
+    await pilot.press("escape")
+    await pilot.pause()
+    assert app.pending_reply is None
+    assert isinstance(app.focused, Composer)
+    # Second escape returns to the chat list.
+    await pilot.press("escape")
+    await pilot.pause()
+    assert isinstance(app.focused, ChatList)
+
+
+# -- in-chat full-text search -------------------------------------------------
+
+
+async def test_search_in_chat_highlights_and_jumps(app):
+    app, pilot = app
+    chat_id = next(c.id for c in app.engine.chats.values() if c.title == "Python Chat")
+    app.open_chat(chat_id, force=True)
+    await pilot.pause()
+    view = app.query_one(ChatView)
+    await pilot.press("ctrl+down")
+    await pilot.press("/")
+    await pilot.pause()
+    assert app.focused is not None and app.focused.id == "msg-search"
+    await pilot.press(*"textual")
+    await pilot.pause()
+    assert view.hits, "должны найтись совпадения по 'textual'"
+    assert all(w.has_class("-hit") for w in view.hits)
+    first_hit = view.hit_index
+    await pilot.press("enter")
+    await pilot.pause()
+    assert view.hit_index == (first_hit + 1) % len(view.hits)
+    # n jumps further, Esc hides the search bar and clears highlighting.
+    await pilot.press("n")
+    await pilot.pause()
+    assert view.hit_index == (first_hit + 2) % len(view.hits)
+    await pilot.press("escape")
+    await pilot.pause()
+    assert app.query_one("#msg-search").display is False
+    assert view.hits == []
+
+
+# -- voice playback ------------------------------------------------------------
+
+
+async def test_voice_playback_hotkey_v(app, monkeypatch):
+    app, pilot = app
+    bob_id = next(c.id for c in app.engine.chats.values() if c.title == "Bob")
+    app.open_chat(bob_id, force=True)
+    await pilot.pause()
+    view = app.query_one(ChatView)
+    voice_idx = next(i for i, w in enumerate(view._widgets()) if w.message.has_voice)
+
+    played: list = []
+    stopped: list = []
+
+    class RecPlayer:
+        def play(self, path):
+            played.append(path)
+
+        def stop(self):
+            stopped.append(True)
+
+    app.voice_player = RecPlayer()
+    await pilot.press("ctrl+down")
+    view.select(voice_idx)
+    await pilot.pause()
+    await pilot.press("v")
+    await pilot.pause()
+    assert len(played) == 1
+    assert played[0].exists(), "mock-движок должен сгенерировать WAV-файл"
+    assert played[0].read_bytes()[:4] == b"RIFF"
+
+
+async def test_voice_without_voice_message_notifies(app, monkeypatch):
+    app, pilot = app
+    notified: list = []
+    monkeypatch.setattr(app, "notify", lambda *a, **k: notified.append(a))
+    await pilot.press("ctrl+down")
+    await pilot.press("v")
+    await pilot.pause()
+    assert notified, "должно прийти уведомление об отсутствии голосового"

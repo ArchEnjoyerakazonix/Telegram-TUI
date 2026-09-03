@@ -7,6 +7,7 @@ import datetime as dt
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import ListItem, ListView, Static
 
@@ -70,11 +71,13 @@ class ChatItem(ListItem):
 
 
 class ChatList(ListView):
-    """ListView of ChatItem plus a hotkey to jump into search."""
+    """ListView of ChatItem with vim keys and hotkeys to jump into search."""
 
     BINDINGS = [
-        ("/", "search", "Search"),
-        ("p", "app.toggle_pin", "Pin"),
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+        Binding("/", "search", "Search"),
+        Binding("p", "app.toggle_pin", "Pin"),
     ]
 
     DEFAULT_CSS = """

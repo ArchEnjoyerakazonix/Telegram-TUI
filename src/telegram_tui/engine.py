@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import datetime as dt
 import random
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 from typing import NamedTuple
 
+from .backend import BaseBackend
+from .media import write_mock_photo, write_mock_voice
 from .models import Chat, ChatType, Message, User, utcnow
 
 TICK_INCOMING_PROBABILITY = 0.55
@@ -77,8 +81,10 @@ class PlannedReply(NamedTuple):
     factory: Callable[[], Message]
 
 
-class MockEngine:
+class MockEngine(BaseBackend):
     """In-memory simulation of the Telegram account the client is bound to."""
+
+    is_mock = True
 
     def __init__(self, seed: int | None = None) -> None:
         self._rng = random.Random(seed)
@@ -87,6 +93,8 @@ class MockEngine:
         self.chats: dict[int, Chat] = {}
         self.messages: dict[int, list[Message]] = {}
         self._next_id = 1
+        self._media_dir = Path(tempfile.gettempdir()) / "telegram-tui-media"
+        self._media_dir.mkdir(exist_ok=True)
         self._build_fixture()
 
     # -- id helpers ---------------------------------------------------------
@@ -123,6 +131,8 @@ class MockEngine:
         text: str,
         minutes_ago: int = 0,
         reply_to: int | None = None,
+        has_voice: bool = False,
+        has_photo: bool = False,
     ) -> Message:
         msg = Message(
             id=self._id(),
@@ -131,6 +141,8 @@ class MockEngine:
             text=text,
             timestamp=utcnow() - dt.timedelta(minutes=minutes_ago),
             reply_to=reply_to,
+            has_voice=has_voice,
+            has_photo=has_photo,
         )
         self.messages[chat_id].append(msg)
         chat = self.chats[chat_id]
@@ -161,6 +173,7 @@ class MockEngine:
         self._msg(alice.id, a, "Ты сегодня на созвоне будешь?", 180)
         self._msg(alice.id, me.id, "Буду. Начинаем в 18:00?", 175)
         self._msg(alice.id, a, "Да, скинула приглашение в календарь 📅", 170)
+        self._msg(alice.id, a, "Смотри, какой закат был вчера 🌇", 168, has_photo=True)
 
         pychat = self._chat("Python Chat", ChatType.GROUP, ["Dave", "Eve", "Frank"])
         d = next(u.id for u in self.users.values() if u.name == "Dave")
@@ -184,7 +197,7 @@ class MockEngine:
 
         bob = self._chat("Bob", ChatType.PRIVATE, ["Bob"])
         bo = next(u.id for u in self.users.values() if u.name == "Bob")
-        self._msg(bob.id, bo, "Слушай, а ты видел PR #42?", 95)
+        self._msg(bob.id, bo, "Слушай, а ты видел PR #42?", 95, has_voice=True)
         bob.unread = 1
 
         work = self._chat("Work · Deploy Squad", ChatType.GROUP, ["PM Olga", "SRE Max"])
@@ -197,6 +210,13 @@ class MockEngine:
 
         docker = self._chat("Docker Club", ChatType.GROUP, ["Grace", "Linus"])
         self._snippet_msg(docker.id, next(u.id for u in self.users.values() if u.name == "Grace"), 400)
+        self._msg(
+            docker.id,
+            next(u.id for u in self.users.values() if u.name == "Linus"),
+            "Скриншот мониторинга после чистки docker system prune 📉",
+            395,
+            has_photo=True,
+        )
 
         books = self._chat("Sci-Fi Books", ChatType.CHANNEL, ["bookbot"])
         self._msg(books.id, self.members[books.id][0], "Книга недели: «Ложная слепота» Питера Уоттса.", 900)
@@ -234,9 +254,30 @@ class MockEngine:
         chat.pinned = not chat.pinned
         return chat
 
-    def send(self, chat_id: int, text: str) -> Message:
-        msg = self._msg(chat_id, self.me.id, text)
+    def send(self, chat_id: int, text: str, reply_to: int | None = None) -> Message:
+        msg = self._msg(chat_id, self.me.id, text, reply_to=reply_to)
         return msg
+
+    async def start(self) -> bool:
+        return True
+
+    # -- media (generated offline so mpv/chafa work in mock mode) -------------
+
+    async def fetch_voice(self, message: Message) -> Path | None:
+        if not message.has_voice:
+            return None
+        path = self._media_dir / f"voice-{message.id}.wav"
+        if not path.exists():
+            write_mock_voice(path)
+        return path
+
+    async def fetch_photo(self, message: Message) -> Path | None:
+        if not message.has_photo:
+            return None
+        path = self._media_dir / f"photo-{message.id}.png"
+        if not path.exists():
+            write_mock_photo(path)
+        return path
 
     def plan_auto_reply(self, chat_id: int) -> PlannedReply | None:
         """Decide whether an interlocutor will reply to the user's last message."""

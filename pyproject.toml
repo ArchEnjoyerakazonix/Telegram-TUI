@@ -15,6 +15,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+live = [
+    "telethon>=1.36",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
