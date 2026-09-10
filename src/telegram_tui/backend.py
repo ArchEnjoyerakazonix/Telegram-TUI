@@ -19,6 +19,7 @@ class BaseBackend(ABC):
     filled by ``start()``/``load()``; ``send`` and media fetching are async."""
 
     is_mock: bool = False
+    chats: dict[int, Chat]
 
     #: Set by the app; called with each new incoming Message.
     on_incoming: Callable[[Message], None] | None = None

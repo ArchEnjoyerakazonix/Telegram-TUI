@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -39,14 +40,14 @@ class Chat(BaseModel):
 class Message(BaseModel):
     id: int
     chat_id: int
-    sender_id: int
+    sender_id: int | None = 0
     text: str = ""
-    timestamp: dt.datetime = Field(default_factory=utcnow)
+    timestamp: dt.datetime | None = Field(default_factory=utcnow)
     reply_to: int | None = None
     has_voice: bool = False
     has_photo: bool = False
     media_type: str = "text"  # "text" | "photo" | "voice" | "video_note" | "sticker" | "document"
     duration: int | None = None  # длительность для аудио/видео
     sticker_emoji: str | None = None
-    reactions: list[tuple[str, int]] = Field(default_factory=list)
+    reactions: list[Any] = Field(default_factory=list)
     waveform: list[int] | None = None

@@ -80,7 +80,12 @@ class Config(BaseModel):
         if env.get(ENV_MODE):
             data["mode"] = env[ENV_MODE]
         if env.get(ENV_API_ID):
-            data["api_id"] = int(env[ENV_API_ID])
+            try:
+                data["api_id"] = int(env[ENV_API_ID])
+            except ValueError as exc:
+                raise ValueError(
+                    f"TG_TUI_API_ID must be an integer, got: {env[ENV_API_ID]!r}"
+                ) from exc
         if env.get(ENV_API_HASH):
             data["api_hash"] = env[ENV_API_HASH]
 
@@ -103,6 +108,15 @@ class Config(BaseModel):
         path: Path | str | None = None,
     ) -> Path:
         """Persist API credentials to disk (defaults to ~/.config/telegram-tui/config.toml)."""
+        if not isinstance(api_id, int) or api_id <= 0:
+            raise ValueError(f"api_id must be a positive integer, got {api_id!r}")
+        if not api_hash or not isinstance(api_hash, str) or "\n" in api_hash or '"' in api_hash:
+            raise ValueError("api_hash must be a valid non-empty string without newlines or quotes")
+        if not session or not isinstance(session, str) or "\n" in session or '"' in session:
+            raise ValueError("session must be a valid non-empty string without newlines or quotes")
+        if mode not in ("mock", "live"):
+            raise ValueError(f"mode must be 'mock' or 'live', got {mode!r}")
+
         if path is not None:
             target = Path(path)
         else:
@@ -118,4 +132,8 @@ class Config(BaseModel):
             'photo_renderer = "chafa"\n'
         )
         target.write_text(content, encoding="utf-8")
+        try:
+            target.chmod(0o600)
+        except OSError:
+            pass
         return target

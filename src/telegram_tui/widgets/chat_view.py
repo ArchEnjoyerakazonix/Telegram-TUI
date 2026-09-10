@@ -34,11 +34,15 @@ _SENDER_STYLES = [
 ]
 
 
-def sender_style(sender_id: int) -> str:
-    return _SENDER_STYLES[sender_id % len(_SENDER_STYLES)]
+def sender_style(sender_id: int | None) -> str:
+    if sender_id is None:
+        return "bold white"
+    return _SENDER_STYLES[abs(sender_id) % len(_SENDER_STYLES)]
 
 
-def _time_label(ts: dt.datetime) -> str:
+def _time_label(ts: dt.datetime | None) -> str:
+    if ts is None:
+        return ""
     return ts.astimezone().strftime("%H:%M")
 
 
@@ -118,9 +122,12 @@ class MessageWidget(Vertical):
         self._reply_to_name = reply_to_name or ""
 
     def compose(self) -> ComposeResult:
+        sender_id = self.message.sender_id
+        sender_name = self._sender_name or "Unknown"
+        time_str = _time_label(self.message.timestamp)
         yield Static(
-            f"[{sender_style(self.message.sender_id)}]"
-            f"{escape(self._sender_name)}[/] [dim]{_time_label(self.message.timestamp)}[/]",
+            f"[{sender_style(sender_id)}]"
+            f"{escape(sender_name)}[/] [dim]{time_str}[/]",
             classes="msg-header",
         )
 
@@ -130,7 +137,8 @@ class MessageWidget(Vertical):
                 first = first[:57] + "…"
             quote = Text()
             quote.append("↱ ", style="dim")
-            quote.append(self._reply_to_name, style=sender_style(self._reply_to.sender_id))
+            reply_sender_id = self._reply_to.sender_id if self._reply_to else None
+            quote.append(self._reply_to_name or "Unknown", style=sender_style(reply_sender_id))
             quote.append(f": {first}", style="dim")
             yield Static(quote, classes="msg-reply", markup=False)
 
@@ -168,17 +176,27 @@ class MessageWidget(Vertical):
 
         if self.message.reactions:
             r_text = Text()
-            for emoji, count in self.message.reactions:
-                r_text.append(f" {emoji} {count} ", style="bold #111413 on #7aa2f7")
-                r_text.append(" ")
-            yield Static(r_text, classes="msg-reactions")
+            for item in self.message.reactions:
+                if isinstance(item, (tuple, list)) and len(item) == 2:
+                    emoji, count = item
+                    emoji = str(emoji) if emoji is not None else "👍"
+                    try:
+                        count = int(count) if count is not None else 1
+                    except (ValueError, TypeError):
+                        count = 1
+                    r_text.append(f" {emoji} {count} ", style="bold #111413 on #7aa2f7")
+                    r_text.append(" ")
+            if len(r_text) > 0:
+                yield Static(r_text, classes="msg-reactions")
 
     def set_selected(self, selected: bool) -> None:
         self.set_class(selected, "-selected")
 
     @staticmethod
-    def _split_text(text: str) -> list[dict]:
+    def _split_text(text: str | None) -> list[dict]:
         parts: list[dict] = []
+        if not text:
+            return parts
         pos = 0
         for match in _FENCE_RE.finditer(text):
             before = text[pos : match.start()]
@@ -243,7 +261,11 @@ class ChatView(VerticalScroll):
         if not widgets:
             return
         oldest_id = widgets[0].message.id
-        older = await self.engine.fetch_more_history(self.chat_id, offset_id=oldest_id)
+        try:
+            older = await self.engine.fetch_more_history(self.chat_id, offset_id=oldest_id)
+        except Exception as exc:
+            self.app.notify(f"Ошибка загрузки истории: {exc}", severity="error")
+            return
         if older:
             banners = self.query(".load-older")
             banner = banners.first() if banners else None
@@ -337,7 +359,7 @@ class ChatView(VerticalScroll):
             widget.remove_class("-miss")
             if not q:
                 continue
-            if q in widget.message.text.lower():
+            if q in (widget.message.text or "").lower():
                 widget.add_class("-hit")
                 self.hits.append(widget)
             else:

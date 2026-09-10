@@ -46,7 +46,7 @@ class LoginScreen(ModalScreen[bool]):
                 title, placeholder, password = _STEPS[self.step]
                 yield Static(title, id="auth-title")
                 yield Input(placeholder=placeholder, password=password, id="auth-input")
-                yield Static("", id="auth-error")
+                yield Static("", id="auth-error", markup=False)
                 yield Static(
                     "Enter — продолжить, Esc — отмена. "
                     "Код придёт в Telegram или по SMS.",
@@ -218,7 +218,7 @@ class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
                     "Их можно бесплатно получить на https://my.telegram.org -> 'API development tools'.",
                     id="api-desc",
                 )
-                yield Static("", id="api-error")
+                yield Static("", id="api-error", markup=False)
                 yield Input(placeholder="App api_id (число, например 12345678)", id="input-api-id")
                 yield Input(placeholder="App api_hash (строка 32 символа)", id="input-api-hash")
                 yield Button("💾 Сохранить и перейти к авторизации", id="btn-save-api", classes="api-btn")
@@ -252,8 +252,18 @@ class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
             self.query_one("#input-api-id", Input).focus()
             return
 
+        if api_id <= 0:
+            error.update("api_id должен быть положительным числом")
+            self.query_one("#input-api-id", Input).focus()
+            return
+
         if not raw_hash:
             error.update("Укажите api_hash")
+            self.query_one("#input-api-hash", Input).focus()
+            return
+
+        if "\n" in raw_hash or '"' in raw_hash or len(raw_hash) < 8:
+            error.update("Некорректный формат api_hash")
             self.query_one("#input-api-hash", Input).focus()
             return
 

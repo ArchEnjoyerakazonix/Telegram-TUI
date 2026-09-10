@@ -63,23 +63,33 @@ def detect_photo_format(environ: dict | None = None) -> list[str]:
 
 
 def render_photo(
-    path: Path,
+    path: Path | str,
     cols: int = 48,
     rows: int = 24,
     renderer: str = "chafa",
     environ: dict | None = None,
 ) -> str | None:
     """Render an image file as terminal output; None if no renderer."""
+    try:
+        p = Path(path)
+        if not p.is_file():
+            return None
+    except Exception:
+        return None
+
     binary = shutil.which(renderer)
     if binary is None:
         return None
-    cmd = [binary, "-s", f"{cols}x{rows}", *detect_photo_format(environ), str(path)]
-    result = subprocess.run(
-        cmd, capture_output=True, timeout=30, check=False
-    )
-    if result.returncode != 0:
+    cmd = [binary, "-s", f"{cols}x{rows}", *detect_photo_format(environ), str(p)]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, timeout=30, check=False
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.decode(errors="replace")
+    except (subprocess.SubprocessError, OSError):
         return None
-    return result.stdout.decode(errors="replace")
 
 
 # -- mock media files (so media works out of the box in mock mode) ------------
@@ -132,7 +142,7 @@ WAVEFORM_BLOCKS = " ▂▃▄▅▆▇█"
 
 def decode_telegram_waveform(raw_bytes: bytes, target_len: int = 24) -> list[int]:
     """Decode Telegram 5-bit packed waveform samples into integer amplitudes (0-31)."""
-    if not raw_bytes:
+    if not raw_bytes or target_len <= 0:
         return []
     total_bits = len(raw_bytes) * 8
     num_samples = total_bits // 5
@@ -158,16 +168,31 @@ def decode_telegram_waveform(raw_bytes: bytes, target_len: int = 24) -> list[int
 
 def format_waveform(waveform: bytes | list[int] | None, width: int = 20) -> str:
     """Format waveform data as Unicode amplitude bar (e.g.  ▂▃▅▇▆▅▃▂ )."""
+    if width <= 0:
+        return ""
     if isinstance(waveform, (bytes, bytearray)):
         samples = decode_telegram_waveform(bytes(waveform), target_len=width)
     elif isinstance(waveform, list) and waveform:
-        samples = waveform
+        cleaned: list[int] = []
+        for s in waveform:
+            try:
+                if s is None:
+                    cleaned.append(0)
+                else:
+                    f = float(s)
+                    if math.isnan(f) or math.isinf(f):
+                        cleaned.append(0)
+                    else:
+                        cleaned.append(max(0, int(f)))
+            except (ValueError, TypeError):
+                cleaned.append(0)
+        samples = cleaned
     else:
         # Default rhythmic wave
         samples = [int(15 + 11 * math.sin(i * 0.5) + 5 * math.cos(i * 1.3)) for i in range(width)]
 
     if not samples:
-        return " ▂▃▅▆▇▅▃ "
+        return " ▂▃▅▆▇▅▃ "[:width]
 
     max_val = max(max(samples), 1)
     chars = []
@@ -178,26 +203,33 @@ def format_waveform(waveform: bytes | list[int] | None, width: int = 20) -> str:
     return "".join(chars)
 
 
-def open_external_media(path: Path) -> subprocess.Popen | None:
+def open_external_media(path: Path | str) -> subprocess.Popen | None:
     """Open media in native desktop viewer (imv, swayimg, feh, mpv, or xdg-open)."""
-    suffix = path.suffix.lower()
+    try:
+        p = Path(path)
+        if not p.is_file():
+            return None
+    except Exception:
+        return None
+
+    suffix = p.suffix.lower()
     is_video = suffix in (".mp4", ".mkv", ".webm", ".avi", ".mov")
     is_image = suffix in (".png", ".jpg", ".jpeg", ".webp", ".gif")
 
     candidates: list[list[str]] = []
     if is_video:
         candidates.append(
-            ["mpv", "--autofit=480x480", "--geometry=480x480", "--title=Telegram Video", "--really-quiet", str(path)]
+            ["mpv", "--autofit=480x480", "--geometry=480x480", "--title=Telegram Video", "--really-quiet", str(p)]
         )
-        candidates.append(["xdg-open", str(path)])
+        candidates.append(["xdg-open", str(p)])
     elif is_image:
         for v in ("imv", "swayimg", "feh", "sxiv", "eog"):
             if shutil.which(v):
-                candidates.append([v, str(path)])
+                candidates.append([v, str(p)])
                 break
-        candidates.append(["xdg-open", str(path)])
+        candidates.append(["xdg-open", str(p)])
     else:
-        candidates.append(["xdg-open", str(path)])
+        candidates.append(["xdg-open", str(p)])
 
     for cmd in candidates:
         if shutil.which(cmd[0]):
@@ -208,7 +240,7 @@ def open_external_media(path: Path) -> subprocess.Popen | None:
                     stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
                 )
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 continue
     return None
 

@@ -71,6 +71,8 @@ class TelethonBackend(BaseBackend):
         from telethon import events
 
         me = await self._client.get_me()
+        if me is None:
+            raise RuntimeError("Не удалось получить профиль пользователя (get_me вернул None)")
         self.users[me.id] = _display_name(me)
         self.me_id = me.id
 
@@ -122,7 +124,7 @@ class TelethonBackend(BaseBackend):
                 if chat and mapped:
                     chat.preview = _preview(mapped[-1].text)
                     chat.last_activity = mapped[-1].timestamp
-            except (RPCError, ConnectionError):
+            except Exception:
                 self._ready[chat_id] = True
 
         asyncio.get_running_loop().create_task(job())
@@ -173,8 +175,10 @@ class TelethonBackend(BaseBackend):
         tm_reactions = getattr(tm, "reactions", None)
         if tm_reactions and hasattr(tm_reactions, "results"):
             for r in tm_reactions.results:
-                emoji = getattr(r.reaction, "emoticon", "👍")
-                reactions.append((emoji, r.count))
+                reaction_obj = getattr(r, "reaction", None)
+                emoji = getattr(reaction_obj, "emoticon", None) or "👍"
+                count = getattr(r, "count", 1)
+                reactions.append((str(emoji), int(count)))
 
         fallback_text = tm.message or ""
         if not fallback_text:
@@ -222,6 +226,7 @@ class TelethonBackend(BaseBackend):
         if chat_id not in self.chats:
             return
         msg = await self._map_message(event.message, chat_id)
+        self.messages.setdefault(chat_id, []).append(msg)
         chat = self.chats[chat_id]
         chat.last_activity = msg.timestamp
         chat.preview = _preview(msg.text)
@@ -337,8 +342,11 @@ class TelethonBackend(BaseBackend):
         tm = self._tmsg.get((message.chat_id, message.id))
         if tm is None or getattr(tm, attr, None) is None:
             return None
-        result = await tm.download_media(file=str(self._media_dir))
-        return Path(result) if result else None
+        try:
+            result = await tm.download_media(file=str(self._media_dir))
+            return Path(result) if result else None
+        except Exception:
+            return None
 
     async def fetch_voice(self, message: Message) -> Path | None:
         res = await self._download(message, "voice")

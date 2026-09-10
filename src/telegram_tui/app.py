@@ -165,7 +165,7 @@ class TelegramTUI(App[None]):
                 from .auth import ApiCredentialsScreen
 
                 creds = await self.push_screen_wait(ApiCredentialsScreen())
-                if creds is None:
+                if creds is None or not isinstance(creds, tuple):
                     self._init_ui()
                     return
                 self.config.api_id, self.config.api_hash = creds
@@ -217,6 +217,8 @@ class TelegramTUI(App[None]):
                 return
 
     def open_chat(self, chat_id: int, force: bool = False) -> None:
+        if chat_id not in self.engine.chats:
+            return
         if chat_id == self.current_chat_id and not force:
             return
         self.current_chat_id = chat_id
@@ -292,9 +294,13 @@ class TelegramTUI(App[None]):
         reply_to = None
         if self.pending_reply and self.pending_reply[0] == self.current_chat_id:
             reply_to = self.pending_reply[1]
-        result = self.engine.send(self.current_chat_id, event.text, reply_to=reply_to)
-        if inspect.isawaitable(result):
-            result = await result
+        try:
+            result = self.engine.send(self.current_chat_id, event.text, reply_to=reply_to)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            self.notify(f"Ошибка отправки: {exc}", severity="error")
+            return
         self.clear_pending_reply()
         self.query_one(ChatView).append_message(result)
         self.refresh_chat_list()
@@ -305,7 +311,9 @@ class TelegramTUI(App[None]):
                 self.set_timer(planned.delay, lambda: self._deliver(planned.factory(), chat_id))
 
     def _deliver(self, message: Message, chat_id: int) -> None:
-        self.engine.chats[chat_id].unread += 1
+        chat = self.engine.chats.get(chat_id)
+        if chat is not None:
+            chat.unread += 1
         self._ingest(message)
 
     # -- live traffic -----------------------------------------------------------
@@ -320,7 +328,9 @@ class TelegramTUI(App[None]):
 
     def _ingest(self, message: Message) -> None:
         """Route a freshly created incoming message into the UI."""
-        chat = self.engine.chats[message.chat_id]
+        chat = self.engine.chats.get(message.chat_id)
+        if chat is None:
+            return
         if message.chat_id == self.current_chat_id:
             self.engine.mark_read(message.chat_id)
             self.query_one(ChatView).append_message(message)
@@ -355,8 +365,11 @@ class TelegramTUI(App[None]):
             return
 
     def action_back_to_list(self) -> None:
-        if len(self.screen_stack) > 1:  # modal (login) is up: Esc cancels it
-            self.screen.dismiss(False)
+        if len(self.screen_stack) > 1:  # modal is up: Esc cancels it
+            if hasattr(self.screen, "action_cancel"):
+                self.screen.action_cancel()
+            else:
+                self.screen.dismiss(None)
             return
         focused = self.focused
         if focused and focused.id == "composer":
@@ -408,7 +421,11 @@ class TelegramTUI(App[None]):
         if message is None or not message.has_voice:
             self.notify("На выбранном сообщении нет голосового (клавиша v)", severity="warning")
             return
-        path = await self.engine.fetch_voice(message)
+        try:
+            path = await self.engine.fetch_voice(message)
+        except Exception as exc:
+            self.notify(f"Ошибка получения аудио: {exc}", severity="error")
+            return
         if path is None:
             self.notify("Голосовое сообщение недоступно", severity="error")
             return
@@ -431,7 +448,11 @@ class TelegramTUI(App[None]):
         from .media import open_external_media
 
         if message.has_photo:
-            path = await self.engine.fetch_photo(message)
+            try:
+                path = await self.engine.fetch_photo(message)
+            except Exception as exc:
+                self.notify(f"Ошибка загрузки фото: {exc}", severity="error")
+                return
             if path and path.exists():
                 open_external_media(path)
                 self.notify(f"🖼 Открываю {path.name} во внешнем просмотрщике")
@@ -440,7 +461,11 @@ class TelegramTUI(App[None]):
             return
 
         if message.media_type in ("video_note", "video", "document"):
-            path = await self.engine.fetch_voice(message)
+            try:
+                path = await self.engine.fetch_voice(message)
+            except Exception as exc:
+                self.notify(f"Ошибка загрузки медиа: {exc}", severity="error")
+                return
             if path and path.exists():
                 open_external_media(path)
                 self.notify(f"⭕ Открываю {path.name} в видеоплеере")
