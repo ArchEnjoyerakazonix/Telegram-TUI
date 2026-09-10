@@ -55,12 +55,10 @@ class VoicePlayer:
 
 
 def detect_photo_format(environ: dict | None = None) -> list[str]:
-    """chafa output flags matching the current terminal's graphics support."""
-    import os
-
-    env = os.environ if environ is None else environ
-    if env.get("KITTY_WINDOW_ID") or "kitty" in env.get("TERM", ""):
-        return ["--format", "kitty"]
+    """chafa output flags matching Textual cell renderer."""
+    # Textual renders through Rich character cells. Raw Kitty/Sixel graphics
+    # protocols escape codes get dumped as base64 text into the widget buffer.
+    # Therefore, we always use Unicode symbols (half-blocks) with truecolor.
     return ["--format", "symbols"]
 
 

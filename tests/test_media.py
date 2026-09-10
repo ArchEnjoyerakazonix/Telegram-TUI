@@ -127,8 +127,8 @@ def test_render_photo_invokes_chafa(monkeypatch, tmp_path):
 
 
 def test_photo_format_detection(monkeypatch=None):
-    assert media.detect_photo_format({"KITTY_WINDOW_ID": "1"}) == ["--format", "kitty"]
-    assert media.detect_photo_format({"TERM": "xterm-kitty"}) == ["--format", "kitty"]
+    assert media.detect_photo_format({"KITTY_WINDOW_ID": "1"}) == ["--format", "symbols"]
+    assert media.detect_photo_format({"TERM": "xterm-kitty"}) == ["--format", "symbols"]
     assert media.detect_photo_format({"TERM": "alacritty"}) == ["--format", "symbols"]
 
 
