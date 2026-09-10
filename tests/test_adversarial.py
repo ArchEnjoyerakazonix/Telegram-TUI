@@ -428,8 +428,9 @@ async def test_chat_view_load_older_history_backend_error():
 async def test_telethon_backend_start_connection_error():
     backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
     backend._client.connect = AsyncMock(side_effect=ConnectionError("No internet connection"))
-    with pytest.raises(ConnectionError, match="No internet connection"):
-        await backend.start()
+    # start() now handles ConnectionError gracefully: resets session and returns False
+    result = await backend.start()
+    assert result is False
 
 
 @pytest.mark.asyncio

@@ -140,15 +140,28 @@ class TelegramTUI(App[None]):
         """Live-mode startup: connect, authorize in-terminal, load chats."""
         try:
             authorized = await self.engine.start()
-            if not authorized:
-                granted = await self.push_screen_wait(LoginScreen(self.engine))
-                if not granted:
-                    self.exit(message="Authentication cancelled.")
-                    return
-            await self.engine.load()
         except Exception as exc:  # noqa: BLE001
+            self.notify(f"Connection failed: {exc}", severity="error", timeout=8)
             self.exit(message=f"Failed to connect: {exc}")
             return
+
+        if not authorized:
+            try:
+                granted = await self.push_screen_wait(LoginScreen(self.engine))
+            except Exception as exc:  # noqa: BLE001
+                self.exit(message=f"Login error: {exc}")
+                return
+            if not granted:
+                self.exit(message="Authentication cancelled. Run again to retry.")
+                return
+
+        try:
+            await self.engine.load()
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"Failed to load chats: {exc}", severity="error", timeout=8)
+            self.exit(message=f"Failed to load chats: {exc}")
+            return
+
         if self.engine.is_mock:
             return
         self.engine.on_incoming = lambda msg: self.post_message(BackendIncoming(msg))

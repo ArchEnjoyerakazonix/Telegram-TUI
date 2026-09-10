@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 import tempfile
 from pathlib import Path
 
@@ -16,6 +17,20 @@ from .models import Chat, ChatType, Message, utcnow
 
 DIALOG_LIMIT = 50
 MESSAGES_PER_DIALOG = 30
+
+_log = logging.getLogger(__name__)
+
+
+def _resolve_session_path(session: str) -> str:
+    """Anchor session file inside ~/.config/telegram-tui/ unless it's already
+    an absolute path.  Returns the path *without* the .session suffix
+    (Telethon appends it automatically)."""
+    p = Path(session)
+    if p.is_absolute():
+        return session
+    config_dir = Path.home() / ".config" / "telegram-tui"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return str(config_dir / p)
 
 
 def _preview(text: str) -> str:
@@ -38,8 +53,11 @@ class TelethonBackend(BaseBackend):
             ) from exc
 
         self._errors = errors
+        self._api_id = api_id
+        self._api_hash = api_hash
         self.PasswordNeededError = errors.SessionPasswordNeededError
-        self._client = TelegramClient(session, api_id, api_hash)
+        self._session_path = _resolve_session_path(session)
+        self._client = TelegramClient(self._session_path, api_id, api_hash)
         self._tmsg: dict[int, object] = {}
         self._entities: dict[int, object] = {}
         self._media_dir = Path(tempfile.gettempdir()) / "telegram-tui-media"
@@ -55,8 +73,40 @@ class TelethonBackend(BaseBackend):
     # -- lifecycle -----------------------------------------------------------
 
     async def start(self) -> bool:
+        """Connect and check authorization.
+
+        If the local session file contains a stale / unregistered auth key,
+        we delete it and reconnect with a fresh session rather than hanging
+        or showing a blank screen.
+        """
+        try:
+            await self._client.connect()
+            return await self._client.is_user_authorized()
+        except (
+            self._errors.AuthKeyUnregisteredError,
+            self._errors.AuthKeyInvalidError,
+        ):
+            _log.warning("Session auth key rejected by Telegram — resetting session")
+            await self._reset_session()
+            return False
+        except (ConnectionError, OSError) as exc:
+            _log.warning("Connection failed (%s) — resetting session and retrying", exc)
+            await self._reset_session()
+            return False
+
+    async def _reset_session(self) -> None:
+        """Delete a corrupt .session file and create a fresh client."""
+        from telethon import TelegramClient
+
+        try:
+            await self._client.disconnect()
+        except Exception:
+            pass
+        for suffix in (".session", ".session-journal"):
+            p = Path(self._session_path + suffix)
+            p.unlink(missing_ok=True)
+        self._client = TelegramClient(self._session_path, self._api_id, self._api_hash)
         await self._client.connect()
-        return await self._client.is_user_authorized()
 
     async def request_code(self, phone: str) -> None:
         await self._client.sign_in(phone=phone)

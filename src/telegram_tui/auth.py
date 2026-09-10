@@ -74,10 +74,11 @@ class LoginScreen(ModalScreen[bool]):
         self.query_one(Input).focus()
 
     def on_button_pressed(self, event) -> None:  # noqa: ANN001
-        if getattr(event.button, "id", None) == "btn-auth-submit":
+        btn_id = getattr(event.button, "id", None)
+        if btn_id == "btn-auth-submit":
             inp = self.query_one("#auth-input", Input)
             self.post_message(Input.Submitted(inp, inp.value))
-        else:
+        elif btn_id == "btn-auth-cancel":
             self.dismiss(False)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
