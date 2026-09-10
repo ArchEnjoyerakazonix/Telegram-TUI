@@ -47,7 +47,7 @@ class Message(BaseModel):
     has_voice: bool = False
     has_photo: bool = False
     media_type: str = "text"  # "text" | "photo" | "voice" | "video_note" | "sticker" | "document"
-    duration: int | None = None  # длительность для аудио/видео
+    duration: int | None = None  # duration in seconds for audio/video
     sticker_emoji: str | None = None
     reactions: list[Any] = Field(default_factory=list)
     waveform: list[int] | None = None

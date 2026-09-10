@@ -10,9 +10,9 @@ from textual.widgets import Input, Static
 from .backend import BaseBackend
 
 _STEPS = {
-    "phone": ("Вход в Telegram", "Номер телефона (например, +79990001122)…", False),
-    "code": ("Код подтверждения", "Код из Telegram/SMS…", False),
-    "password": ("Двухфакторная аутентификация", "Облачный пароль (ввод скрыт)…", True),
+    "phone": ("Telegram Sign In", "Phone number (e.g. +1234567890)...", False),
+    "code": ("Confirmation Code", "Code from Telegram / SMS...", False),
+    "password": ("Two-Factor Authentication", "Cloud password (hidden input)...", True),
 }
 
 
@@ -48,8 +48,8 @@ class LoginScreen(ModalScreen[bool]):
                 yield Input(placeholder=placeholder, password=password, id="auth-input")
                 yield Static("", id="auth-error", markup=False)
                 yield Static(
-                    "Enter — продолжить, Esc — отмена. "
-                    "Код придёт в Telegram или по SMS.",
+                    "Press Enter to continue, Esc to cancel. "
+                    "Confirmation code will arrive in Telegram or via SMS.",
                     id="auth-hint",
                 )
 
@@ -80,7 +80,7 @@ class LoginScreen(ModalScreen[bool]):
                 await self.backend.submit_password(value)
                 await self._finish()
         except Exception as exc:  # noqa: BLE001 - show any backend error inline
-            error.update(f"Ошибка: {exc}")
+            error.update(f"Error: {exc}")
             event.input.disabled = False
             event.input.focus()
 
@@ -91,7 +91,7 @@ class LoginScreen(ModalScreen[bool]):
         error = self.query_one("#auth-error", Static)
         error.update("…")
         if step == "password":
-            error.update("Требуется облачный пароль (2FA)")
+            error.update("Cloud password required (2FA)")
         inp = self.query_one(Input)
         inp.value = ""
         inp.placeholder = placeholder
@@ -100,7 +100,7 @@ class LoginScreen(ModalScreen[bool]):
         inp.focus()
 
     async def _finish(self) -> None:
-        self.query_one("#auth-error", Static).update("✅ Успешно, загружаю чаты…")
+        self.query_one("#auth-error", Static).update("Signed in successfully, loading chats...")
         self.dismiss(True)
 
     def action_cancel(self) -> None:
@@ -115,7 +115,7 @@ class WelcomeScreen(ModalScreen[str]):
     DEFAULT_CSS = """
     WelcomeScreen { align: center middle; background: #000000 70%; }
     #welcome-box {
-        width: 68;
+        width: 70;
         height: auto;
         padding: 2 3;
         background: #16161e;
@@ -127,13 +127,27 @@ class WelcomeScreen(ModalScreen[str]):
     .welcome-btn {
         width: 1fr;
         margin-bottom: 1;
-        background: #24283b;
-        color: #f0f0f0;
         border: tall #414868;
     }
-    .welcome-btn:focus, .welcome-btn:hover {
+    .btn-primary {
+        background: #7aa2f7;
+        color: #111413;
+        text-style: bold;
+        border: tall #7aa2f7;
+    }
+    .btn-primary:focus, .btn-primary:hover {
         background: #b7e680;
         color: #111413;
+        border: tall #b7e680;
+    }
+    .btn-secondary {
+        background: #24283b;
+        color: #c0caf5;
+        border: tall #414868;
+    }
+    .btn-secondary:focus, .btn-secondary:hover {
+        background: #414868;
+        color: #ffffff;
         text-style: bold;
     }
     #welcome-note { color: #565f89; margin-top: 1; text-align: center; }
@@ -145,17 +159,17 @@ class WelcomeScreen(ModalScreen[str]):
         with Center():
             with Vertical(id="welcome-box"):
                 yield Static("⚡ TELEGRAM / TUI  •  v0.4.0", id="welcome-badge")
-                yield Static("Твой Telegram. Полностью в терминале.", id="welcome-title")
+                yield Static("Your Telegram. Entirely in your terminal.", id="welcome-title")
                 yield Static(
-                    "Быстрый, легковесный TUI-клиент для клавиатурного управления.\n"
-                    "Выберите способ запуска:",
+                    "Fast, lightweight TUI client built for keyboard control.\n"
+                    "Select how you want to launch:",
                     id="welcome-desc",
                 )
-                yield Button("🚀 Войти в реальный Telegram (Telethon)", id="btn-login", classes="welcome-btn")
-                yield Button("🎭 Запустить Демо-режим (Mock Workspace)", id="btn-demo", classes="welcome-btn")
+                yield Button("Log in to Telegram (Telethon Live)", id="btn-login", classes="welcome-btn btn-primary")
+                yield Button("Explore Demo Workspace (Offline Mock)", id="btn-demo", classes="welcome-btn btn-secondary")
                 yield Static(
-                    "Конфигурация хранится в ~/.config/telegram-tui/config.toml\n"
-                    "[Esc / Enter] для быстрого выбора демо-режима",
+                    "Configuration stored in ~/.config/telegram-tui/config.toml\n"
+                    "[Esc / Enter] to explore demo mode",
                     id="welcome-note",
                 )
 
@@ -192,17 +206,31 @@ class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
         border: solid #3b4261;
         color: #c0caf5;
     }
-    #api-box Input:focus { border: solid #b7e680; }
+    #api-box Input:focus { border: solid #7aa2f7; }
     .api-btn {
         width: 1fr;
         margin-bottom: 1;
-        background: #24283b;
-        color: #f0f0f0;
         border: tall #414868;
     }
-    .api-btn:focus, .api-btn:hover {
+    .btn-primary {
+        background: #7aa2f7;
+        color: #111413;
+        text-style: bold;
+        border: tall #7aa2f7;
+    }
+    .btn-primary:focus, .btn-primary:hover {
         background: #b7e680;
         color: #111413;
+        border: tall #b7e680;
+    }
+    .btn-secondary {
+        background: #24283b;
+        color: #c0caf5;
+        border: tall #414868;
+    }
+    .btn-secondary:focus, .btn-secondary:hover {
+        background: #414868;
+        color: #ffffff;
         text-style: bold;
     }
     """
@@ -212,17 +240,17 @@ class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
 
         with Center():
             with Vertical(id="api-box"):
-                yield Static("🔑 Настройка Telegram API", id="api-title")
+                yield Static("🔑 Telegram API Setup", id="api-title")
                 yield Static(
-                    "Для прямого подключения требуются api_id и api_hash.\n"
-                    "Их можно бесплатно получить на https://my.telegram.org -> 'API development tools'.",
+                    "Direct connection requires an api_id and api_hash.\n"
+                    "Get them for free at https://my.telegram.org -> 'API development tools'.",
                     id="api-desc",
                 )
                 yield Static("", id="api-error", markup=False)
-                yield Input(placeholder="App api_id (число, например 12345678)", id="input-api-id")
-                yield Input(placeholder="App api_hash (строка 32 символа)", id="input-api-hash")
-                yield Button("💾 Сохранить и перейти к авторизации", id="btn-save-api", classes="api-btn")
-                yield Button("Отмена (вернуться в Демо-режим)", id="btn-cancel-api", classes="api-btn")
+                yield Input(placeholder="App api_id (integer, e.g. 12345678)", id="input-api-id")
+                yield Input(placeholder="App api_hash (32-character string)", id="input-api-hash")
+                yield Button("Save & Connect to Telegram", id="btn-save-api", classes="api-btn btn-primary")
+                yield Button("Cancel (Return to Demo)", id="btn-cancel-api", classes="api-btn btn-secondary")
 
     def on_button_pressed(self, event) -> None:  # noqa: ANN001
         if getattr(event.button, "id", None) == "btn-save-api":
@@ -242,28 +270,28 @@ class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
         error = self.query_one("#api-error", Static)
 
         if not raw_id:
-            error.update("Укажите api_id")
+            error.update("Please enter api_id")
             self.query_one("#input-api-id", Input).focus()
             return
         try:
             api_id = int(raw_id)
         except ValueError:
-            error.update("api_id должен быть целым числом")
+            error.update("api_id must be an integer")
             self.query_one("#input-api-id", Input).focus()
             return
 
         if api_id <= 0:
-            error.update("api_id должен быть положительным числом")
+            error.update("api_id must be a positive integer")
             self.query_one("#input-api-id", Input).focus()
             return
 
         if not raw_hash:
-            error.update("Укажите api_hash")
+            error.update("Please enter api_hash")
             self.query_one("#input-api-hash", Input).focus()
             return
 
         if "\n" in raw_hash or '"' in raw_hash or len(raw_hash) < 8:
-            error.update("Некорректный формат api_hash")
+            error.update("Invalid api_hash format")
             self.query_one("#input-api-hash", Input).focus()
             return
 

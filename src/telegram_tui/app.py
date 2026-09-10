@@ -116,11 +116,11 @@ class TelegramTUI(App[None]):
                 yield ChatList(id="chat-list")
             with Vertical(id="main"):
                 yield Input(
-                    placeholder="Поиск в чате… (Enter/N — дальше, N — назад, Esc — скрыть)",
+                    placeholder="Search in chat… (Enter/n: next, N: prev, Esc: hide)",
                     id="msg-search",
                 )
                 yield ChatView(self.engine)
-                yield Static("📢 Канал — только для чтения (отправка сообщений ограничена)", id="channel-banner")
+                yield Static("📢 Read-only channel (posting is restricted)", id="channel-banner")
                 yield Composer(id="composer", placeholder="Write a message… (Enter — send, Alt+Enter — newline)")
         yield Footer()
 
@@ -143,11 +143,11 @@ class TelegramTUI(App[None]):
             if not authorized:
                 granted = await self.push_screen_wait(LoginScreen(self.engine))
                 if not granted:
-                    self.exit(message="Авторизация отменена.")
+                    self.exit(message="Authentication cancelled.")
                     return
             await self.engine.load()
         except Exception as exc:  # noqa: BLE001
-            self.exit(message=f"Не удалось подключиться: {exc}")
+            self.exit(message=f"Failed to connect: {exc}")
             return
         if self.engine.is_mock:
             return
@@ -172,7 +172,7 @@ class TelegramTUI(App[None]):
                 self.config.mode = "live"
                 try:
                     Config.save_credentials(self.config.api_id, self.config.api_hash, session=self.config.session)
-                    self.notify("Ключи сохранены в ~/.config/telegram-tui/config.toml")
+                    self.notify("Credentials saved to ~/.config/telegram-tui/config.toml")
                 except Exception:
                     pass
 
@@ -228,7 +228,7 @@ class TelegramTUI(App[None]):
         view = self.query_one(ChatView)
         if not self.engine.ensure_history(chat_id):
             view.remove_children()
-            view.mount(Static("Загрузка истории…", markup=False))
+            view.mount(Static("Loading history…", markup=False))
         else:
             view.show_chat(self.engine.chats[chat_id])
 
@@ -299,7 +299,7 @@ class TelegramTUI(App[None]):
             if inspect.isawaitable(result):
                 result = await result
         except Exception as exc:
-            self.notify(f"Ошибка отправки: {exc}", severity="error")
+            self.notify(f"Failed to send: {exc}", severity="error")
             return
         self.clear_pending_reply()
         self.query_one(ChatView).append_message(result)
@@ -403,7 +403,7 @@ class TelegramTUI(App[None]):
             return
         self.pending_reply = (message.chat_id, message.id)
         composer = self.query_one(Composer)
-        first = message.text.splitlines()[0] if message.text else "вложение"
+        first = message.text.splitlines()[0] if message.text else "attachment"
         composer.border_title = (
             f"↱ {self.engine.sender_name(message.sender_id)}: {first[:48]}"
         )
@@ -419,22 +419,22 @@ class TelegramTUI(App[None]):
         view = self.query_one(ChatView)
         message = view.selected_message()
         if message is None or not message.has_voice:
-            self.notify("На выбранном сообщении нет голосового (клавиша v)", severity="warning")
+            self.notify("No voice message on selected message (key: v)", severity="warning")
             return
         try:
             path = await self.engine.fetch_voice(message)
         except Exception as exc:
-            self.notify(f"Ошибка получения аудио: {exc}", severity="error")
+            self.notify(f"Failed to get audio: {exc}", severity="error")
             return
         if path is None:
-            self.notify("Голосовое сообщение недоступно", severity="error")
+            self.notify("Voice message unavailable", severity="error")
             return
         try:
             self.voice_player.play(path)
         except Exception as exc:  # noqa: BLE001 - MediaPlayerNotFound, OSError
             self.notify(str(exc), severity="error")
             return
-        self.notify(f"▶ Играет {path.name} (mpv в фоне)")
+        self.notify(f"▶ Playing {path.name} (mpv in background)")
 
     def action_stop_voice(self) -> None:
         self.voice_player.stop()
@@ -451,33 +451,33 @@ class TelegramTUI(App[None]):
             try:
                 path = await self.engine.fetch_photo(message)
             except Exception as exc:
-                self.notify(f"Ошибка загрузки фото: {exc}", severity="error")
+                self.notify(f"Failed to load photo: {exc}", severity="error")
                 return
             if path and path.exists():
                 open_external_media(path)
-                self.notify(f"🖼 Открываю {path.name} во внешнем просмотрщике")
+                self.notify(f"🖼 Opening {path.name} in external viewer")
             else:
-                self.notify("Фотография недоступна", severity="error")
+                self.notify("Photo unavailable", severity="error")
             return
 
         if message.media_type in ("video_note", "video", "document"):
             try:
                 path = await self.engine.fetch_voice(message)
             except Exception as exc:
-                self.notify(f"Ошибка загрузки медиа: {exc}", severity="error")
+                self.notify(f"Failed to load media: {exc}", severity="error")
                 return
             if path and path.exists():
                 open_external_media(path)
-                self.notify(f"⭕ Открываю {path.name} в видеоплеере")
+                self.notify(f"⭕ Opening {path.name} in video player")
             else:
-                self.notify("Медиафайл недоступен", severity="error")
+                self.notify("Media file unavailable", severity="error")
             return
 
         if message.has_voice or message.media_type == "voice":
             await self.play_selected_voice()
             return
 
-        self.notify("На выбранном сообщении нет файлов для открытия (клавиша o)", severity="warning")
+        self.notify("No media files to open on selected message (key: o)", severity="warning")
 
     def action_open_media(self) -> None:
         self.run_worker(self.open_selected_media())

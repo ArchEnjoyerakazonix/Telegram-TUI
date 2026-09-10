@@ -145,25 +145,25 @@ class MessageWidget(Vertical):
         if self.message.has_voice or self.message.media_type == "voice":
             from ..media import format_waveform
 
-            dur = f" ({self.message.duration}с)" if self.message.duration else ""
+            dur = f" ({self.message.duration}s)" if self.message.duration else ""
             wave = format_waveform(self.message.waveform, width=18)
             yield Static(
-                f"🎙 [bold #ff9e64]голосовое{dur}[/]  [bold #7aa2f7]{wave}[/]  [dim]v: звук, o: открыть[/]",
+                f"🎙 [bold #ff9e64]voice{dur}[/]  [bold #7aa2f7]{wave}[/]  [dim]v: play, o: open[/]",
                 classes="msg-voice",
                 markup=True,
             )
 
         if self.message.media_type == "video_note":
-            dur = f" ({self.message.duration}с)" if self.message.duration else ""
+            dur = f" ({self.message.duration}s)" if self.message.duration else ""
             yield Static(
-                f"⭕ [bold #7aa2f7]видеосообщение-кружочек{dur}[/]  [dim]o / v: открыть в mpv (PIP)[/]",
+                f"⭕ [bold #7aa2f7]video note{dur}[/]  [dim]o / v: open in mpv (PIP)[/]",
                 classes="msg-video",
                 markup=True,
             )
 
         if self.message.media_type == "sticker" or self.message.sticker_emoji:
             emoji = self.message.sticker_emoji or "🎭"
-            yield Static(f"🎭 [bold #bb9af7]стикер:[/] {emoji}", classes="msg-sticker", markup=True)
+            yield Static(f"🎭 [bold #bb9af7]sticker:[/] {emoji}", classes="msg-sticker", markup=True)
 
         for part in self._split_text(self.message.text):
             if part["kind"] == "code":
@@ -248,7 +248,7 @@ class ChatView(VerticalScroll):
         self.remove_children()
         self.hits = []
         self.hit_index = -1
-        self.mount(Static("⬆ Загрузить более ранние сообщения (Ctrl+O)", classes="load-older"))
+        self.mount(Static("⬆ Load older messages (Ctrl+O)", classes="load-older"))
         for message in self.engine.history(chat.id):
             self.mount(self._make_message_widget(message))
         self.scroll_end(animate=False, force=True)
@@ -264,7 +264,7 @@ class ChatView(VerticalScroll):
         try:
             older = await self.engine.fetch_more_history(self.chat_id, offset_id=oldest_id)
         except Exception as exc:
-            self.app.notify(f"Ошибка загрузки истории: {exc}", severity="error")
+            self.app.notify(f"Failed to load history: {exc}", severity="error")
             return
         if older:
             banners = self.query(".load-older")
@@ -275,9 +275,9 @@ class ChatView(VerticalScroll):
                     self.mount(w, after=banner)
                 else:
                     self.mount(w)
-            self.app.notify(f"Загружено {len(older)} более ранних сообщений", timeout=2)
+            self.app.notify(f"Loaded {len(older)} older messages", timeout=2)
         else:
-            self.app.notify("Вы достигли начала истории сообщений", timeout=2)
+            self.app.notify("You have reached the beginning of chat history", timeout=2)
 
     def append_message(self, message: Message, scroll: bool = True) -> MessageWidget:
         was_last_selected = self._selected >= len(self._widgets()) - 1

@@ -1,39 +1,98 @@
 # telegram-tui
 
-(ПОКА ТОЛЬКО ПРОТОТИП MVP НЕТ ЧЕРЕЗ НЕДЕЛЮ ДОДЕЛАЮ). Терминальный клиент для Telegram на [Textual](https://textual.textualize.io/).
-Работает на **mock-engine** — полной симуляции активности аккаунта — поэтому
-клиент можно запустить и тестировать прямо сейчас, без реальной авторизации.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776ab.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
+[![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![Tests: 102 Passed](https://img.shields.io/badge/tests-102%20passed-brightgreen.svg?style=flat-square)](tests/)
 
-![Скриншот клиента](docs/screenshot.png)
+A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
-## Запуск
+Features a high-contrast three-panel interface, native terminal media rendering (`chafa`), background audio playback (`mpv`), floating PIP video notes, interactive first-run onboarding wizard, full Vim navigation, and an offline mock engine for zero-setup experimentation.
 
+---
+
+## Key Highlights
+
+- **Seamless First-Run Onboarding**: Automatic terminal wizard detects missing API keys and prompts you to input credentials or explore in Mock mode. Generates `~/.config/telegram-tui/config.toml` automatically.
+- **Full In-Terminal Media Pipeline**:
+  - **Photos**: Rendered directly in message feed using `chafa` (auto-detecting Kitty graphics protocol, Sixel, or 24-bit half-blocks).
+  - **Voice Messages**: Rendered with dynamic Unicode audio waveforms (` ▂▃▅▆▇`) and direct background playback via `mpv` (hotkey `v`).
+  - **Video Notes (Circles)**: One-key popout to floating PIP window via `mpv` (hotkey `o` or `v`).
+  - **Stickers & Reactions**: Rendered with emoji fallbacks (`🎭 sticker: [emoji]`) and quick numeric reactions (`1`–`5`: 👍, ❤️, 🔥, 🎉, 🤔).
+- **Three-Panel Layout**:
+  - **Sidebar**: Search filtering (`/` or `Ctrl+F`), pinned chats (`Ctrl+P`), unread badge counters, and chat type badges (Private, Group, Channel).
+  - **Chat Feed**: Markdown and fenced code syntax highlighting, reply chains (`↱`), pagination banner for older messages (`Ctrl+O`), and read-only channel protection.
+  - **Composer**: Expandable multiline editor (`Alt+Enter` for newline, `Ctrl+G` to toggle height) with active reply indicators.
+- **Vim-Centric Navigation**: Smooth navigation with `j`/`k`, `gg`/`G`, in-chat search (`/` and `n`/`N`), and instant quote replies (`r`).
+- **Dual Engine Architecture**:
+  - **Live Mode**: Real-time MTProto connection through Telethon with secure phone, SMS, and 2FA cloud password authentication.
+  - **Mock Mode**: Fully offline simulated account with 10 pre-seeded conversations, active background traffic, and automated bot replies.
+
+---
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10 or newer
+- *(Optional)* [`chafa`](https://hpjansson.org/chafa/) — For in-terminal image previews
+- *(Optional)* [`mpv`](https://mpv.io/) — For audio voice playback and floating PIP video notes
+
+On Arch Linux:
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-telegram-tui          # или: python -m telegram_tui
+sudo pacman -S chafa mpv python
 ```
 
-## Интерфейс — три панели
+On Ubuntu / Debian:
+```bash
+sudo apt update && sudo apt install chafa mpv python3 python3-venv
+```
 
-| Панель | Что умеет |
-|---|---|
-| Слева: список чатов | поиск (`/` или `Ctrl+F`), пины (`Ctrl+P`), счётчик непрочитанных (циановый бейдж), превью последнего сообщения, иконки типа (группа/канал) |
-| Центр: история сообщений | скролл, подсветка синтаксиса кода (fenced ``` блоки), цитаты-ответы (`↱`) |
-| Внизу: поле ввода | многострочное (`Alt+Enter` — перенос строки, `Ctrl+G` — увеличить/уменьшить) |
+On macOS (Homebrew):
+```bash
+brew install chafa mpv python
+```
 
-## Режимы работы: Mock и Live (Telethon)
+### Install Telegram TUI
 
-`telegram-tui` поддерживает два режима:
+```bash
+# Clone repository
+git clone https://github.com/ArchEnjoyerakazonix/Telegram-TUI.git
+cd Telegram-TUI
 
-1. **`mock` (по умолчанию)**: офлайн-симуляция аккаунта с 10 чатами, входящим трафиком и автоответами собеседников. Работает «из коробки» без авторизации.
-2. **`live`**: подключение к реальному Telegram через Telethon с авторизацией прямо в терминале.
+# Set up virtual environment
+python -m venv .venv
+source .venv/bin/activate
 
-### Настройка Live-режима
+# Install in editable mode
+pip install -e .
+```
 
-1. Получите `api_id` и `api_hash` на [my.telegram.org](https://my.telegram.org).
-2. Создайте файл `config.toml` (в текущей директории или `~/.config/telegram-tui/config.toml`):
+---
+
+## Quick Start
+
+Launch the client from any terminal:
+
+```bash
+telegram-tui
+```
+
+On your first run:
+1. If no configuration exists, the **Onboarding Wizard** will appear.
+2. Select **"Enter API Credentials"** to connect your Telegram account, or **"Explore Mock Mode"** to try out the client with simulated data.
+3. If connecting your real account, enter your phone number (`+1...`), the verification code sent to your Telegram apps, and your 2FA password (if enabled). Your session is safely preserved in `telegram-tui.session`.
+
+---
+
+## Configuration
+
+Credentials can be supplied via configuration file or environment variables.
+
+### Config File (`~/.config/telegram-tui/config.toml`)
+
+You can create or edit `~/.config/telegram-tui/config.toml` (or `./config.toml`):
 
 ```toml
 mode = "live"
@@ -41,65 +100,126 @@ api_id = 12345678
 api_hash = "0123456789abcdef0123456789abcdef"
 session = "telegram-tui"
 
-# Медиа-инструменты (опционально)
-media_player = "mpv"     # проигрыватель голосовых сообщений
-photo_renderer = "chafa" # рендер превью фото прямо в терминале
+# Optional media tools
+media_player = "mpv"     # Voice and video playback
+photo_renderer = "chafa" # In-terminal image rendering
 ```
 
-Либо задайте через переменные окружения:
+> **Note**: You can obtain your `api_id` and `api_hash` freely from [my.telegram.org](https://my.telegram.org) under **API Development Tools**.
+
+### Environment Variables
+
+Alternatively, configure using environment variables:
+
 ```bash
 export TG_TUI_MODE=live
 export TG_TUI_API_ID=12345678
 export TG_TUI_API_HASH=0123456789abcdef0123456789abcdef
+telegram-tui
 ```
 
-3. Запустите `telegram-tui`. Появится модальное окно авторизации:
-   - Введите номер телефона (`+7999...`) → `Enter`.
-   - Введите код подтверждения из Telegram/SMS → `Enter`.
-   - При наличии 2FA введите облачный пароль (ввод скрыт) → `Enter`.
-   - Сессия сохраняется локально в файл `telegram-tui.session`.
-
 ---
 
-## Медиа в терминале
+## Hotkeys & Keyboard Navigation
 
-- **Голосовые сообщения**: выберите сообщение и нажмите `v` — голосовое проиграется в фоне через `mpv`.
-- **Фото**: при наличии утилиты `chafa` превью изображений отображается прямо в ленте сообщений (автоматически выбирается протокол Kitty graphics, Sixel или Unicode half-blocks в зависимости от вашего терминала).
+Telegram TUI is built for speed and fully navigable without a mouse.
 
----
+### Global & Focus
 
-## Горячие клавиши
-
-| Клавиша | Действие |
+| Key | Action |
 |---|---|
-| `Enter` | отправить сообщение |
-| `Alt+Enter` | перенос строки в поле ввода |
-| `Ctrl+↑ / Ctrl+↓` | переключение панелей (список → история → ввод) |
-| `Ctrl+F`, `/` (в списке) | полнотекстовый поиск по чатам |
-| `j / k` (в списке) | перемещение вверх / вниз по чатам (Vim) |
-| `j / k` (в истории) | перемещение по сообщениям |
-| `gg / G` (в истории) | перейти к первому / последнему сообщению |
-| `r` (в истории) | быстрый ответ на выбранное сообщение с цитатой |
-| `v` (в истории) | воспроизвести голосовое сообщение через `mpv` |
-| `/` (в истории) | поиск текста внутри открытого диалога |
-| `n / N` (при поиске) | следующий / предыдущий результат поиска |
-| `Esc` | сбросить поиск / отменить ответ / закрыть окно |
-| `Ctrl+P` | закрепить/открепить выбранный чат 📌 |
-| `Ctrl+M` | пометить чат прочитанным |
-| `Ctrl+U` | сэмулировать входящее сообщение (в mock-режиме) |
-| `Ctrl+Q` | выход |
+| `Tab` / `Shift+Tab` | Cycle focus between Panels (Chat List ↔ Feed ↔ Input) |
+| `Ctrl+↑` / `Ctrl+↓` | Switch focus between panels |
+| `Ctrl+Q` | Quit application |
+| `Esc` | Cancel reply, dismiss dialogs, or clear search |
+
+### Chat List (Left Panel)
+
+| Key | Action |
+|---|---|
+| `j` / `k` or `↓` / `↑` | Move down / up the chat list |
+| `/` or `Ctrl+F` | Filter / search chat list |
+| `Enter` | Select and open chat |
+| `Ctrl+P` | Pin / unpin selected chat 📌 |
+| `Ctrl+M` | Mark chat as read |
+| `Ctrl+U` | Simulate incoming message *(mock mode only)* |
+
+### Message Feed (Center Panel)
+
+| Key | Action |
+|---|---|
+| `j` / `k` or `↓` / `↑` | Navigate messages up / down |
+| `gg` / `G` | Jump to oldest / newest message |
+| `r` | Quote-reply to selected message |
+| `v` | Play voice note or open video note in `mpv` |
+| `o` | Open photo/video in external viewer or `mpv` PIP |
+| `1` – `5` | Add quick reaction (👍, ❤️, 🔥, 🎉, 🤔) |
+| `Ctrl+O` | Load older message history from server |
+| `/` | Search inside current chat feed |
+| `n` / `N` | Jump to next / previous search match in feed |
+
+### Message Composer (Bottom Panel)
+
+| Key | Action |
+|---|---|
+| `Enter` | Send message |
+| `Alt+Enter` | Insert newline (multiline text) |
+| `Ctrl+G` | Expand / collapse input box height |
+| `Esc` | Cancel current reply quote |
 
 ---
 
-## Тесты
+## Architecture & Codebase
+
+```
+telegram-tui/
+├── src/telegram_tui/
+│   ├── app.py                 # Core Textual App & event bindings
+│   ├── auth.py                # Onboarding & Auth screens (Credentials, Phone, 2FA)
+│   ├── config.py              # TOML config loader, env parser & persistence
+│   ├── engine.py              # Deterministic mock engine for offline testing
+│   ├── media.py               # Chafa terminal rendering & MPV subprocess manager
+│   ├── models.py              # Pure data models (Chat, Message, Media, Reaction)
+│   ├── telethon_backend.py    # Production Telethon MTProto client implementation
+│   └── widgets/
+│       ├── chat_list.py       # Sidebar chat items with badges & search
+│       ├── chat_view.py       # Message bubbles, waveforms, syntax highlighting
+│       ├── input_box.py       # Multiline composer with reply bar
+│       └── photo.py           # Inline ASCII/Sixel/Kitty image renderer
+├── tests/
+│   ├── test_adversarial.py    # 41 rigorous adversarial & stress tests
+│   ├── test_auth.py           # Full auth modal lifecycle & 2FA tests
+│   ├── test_config.py         # Config priority, parsing & persistence tests
+│   ├── test_engine.py         # Mock engine state & conversation simulation tests
+│   ├── test_features_mvp.py   # MVP feature validation tests
+│   ├── test_media.py          # Chafa protocol detection & MPV invocation tests
+│   └── test_ui.py             # Textual Pilot end-to-end user journey tests
+├── pyproject.toml
+└── README.md
+```
+
+---
+
+## Testing
+
+Telegram TUI features an exhaustive test suite covering unit logic, adversarial error handling, async network dropouts, rate limiting (FloodWait), and end-to-end terminal interactions:
 
 ```bash
-pytest
+# Run full test suite
+pytest tests/
+
+# Run with verbose output
+pytest -v tests/
 ```
 
-Все **52 теста** проходят успешно:
-- `test_engine.py`: юнит-тесты генератора, тиков, поиска и детерминированности mock-движка.
-- `test_config.py`: валидация TOML, переменных окружения, режимов и учетных данных.
-- `test_media.py`: интеграция с `mpv`, автоопределение терминальных протоколов `chafa`.
-- `test_auth.py`: пошаговый диалог авторизации (телефон → код → 2FA-пароль, ошибки и отмена).
-- `test_ui.py`: UI-тесты через `textual.pilot` (Vim-навигация, ресайз SIGWINCH, ответы, поиск, голосовые).
+**102 tests** passing across all subsystems:
+- ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
+- ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
+- ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.
+- ✅ **UI Pilot**: Tests real keyboard interactions, Vim motions, search filtering, quoting, pagination, and dynamic window resizing (`SIGWINCH`).
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

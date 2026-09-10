@@ -11,11 +11,11 @@ from .engine import MockEngine
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="telegram-tui", description="Terminal Telegram client on Textual")
-    parser.add_argument("--config", help="путь к config.toml (по умолчанию ./config.toml или ~/.config/telegram-tui/config.toml)")
-    parser.add_argument("--mode", choices=("mock", "live"), help="переопределить режим из конфига")
-    parser.add_argument("--no-traffic", action="store_true", help="mock-режим без фонового входящего трафика")
-    parser.add_argument("--welcome", action="store_true", help="показать экран приветствия и выбора режима")
-    parser.add_argument("--print-config", action="store_true", help="показать пример конфигурации и выйти")
+    parser.add_argument("--config", help="path to config.toml (default: ./config.toml or ~/.config/telegram-tui/config.toml)")
+    parser.add_argument("--mode", choices=("mock", "live"), help="override startup mode (mock or live)")
+    parser.add_argument("--no-traffic", action="store_true", help="run mock mode without background incoming traffic")
+    parser.add_argument("--welcome", action="store_true", help="show welcome and mode selection screen")
+    parser.add_argument("--print-config", action="store_true", help="print sample configuration and exit")
     return parser
 
 
@@ -30,8 +30,8 @@ def main(argv: list[str] | None = None) -> int:
         config.mode = args.mode
         if config.mode == "live" and (not config.api_id or not config.api_hash):
             print(
-                'Ошибка: mode = "live" требует api_id и api_hash '
-                "(config.toml или переменные TG_TUI_API_ID / TG_TUI_API_HASH).",
+                'Error: mode = "live" requires api_id and api_hash '
+                "(config.toml or TG_TUI_API_ID / TG_TUI_API_HASH env vars).",
                 file=sys.stderr,
             )
             return 2

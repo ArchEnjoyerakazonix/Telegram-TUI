@@ -167,43 +167,43 @@ async def test_api_credentials_screen_empty_validation():
 
     # 1. Empty api_id
     screen._submit()
-    assert err.text == "Укажите api_id"
+    assert err.text == "Please enter api_id"
     assert not dismissed_result
 
     # 2. Non-digit api_id
     inp_id.value = "not_digits"
     screen._submit()
-    assert err.text == "api_id должен быть целым числом"
+    assert err.text == "api_id must be an integer"
     assert not dismissed_result
 
     # 3. Negative api_id
     inp_id.value = "-100"
     screen._submit()
-    assert err.text == "api_id должен быть положительным числом"
+    assert err.text == "api_id must be a positive integer"
     assert not dismissed_result
 
     # 4. Zero api_id
     inp_id.value = "0"
     screen._submit()
-    assert err.text == "api_id должен быть положительным числом"
+    assert err.text == "api_id must be a positive integer"
     assert not dismissed_result
 
     # 5. Empty api_hash
     inp_id.value = "123456"
     inp_hash.value = ""
     screen._submit()
-    assert err.text == "Укажите api_hash"
+    assert err.text == "Please enter api_hash"
     assert not dismissed_result
 
     # 6. Malformed api_hash (too short or newlines)
     inp_hash.value = "short"
     screen._submit()
-    assert err.text == "Некорректный формат api_hash"
+    assert err.text == "Invalid api_hash format"
     assert not dismissed_result
 
     inp_hash.value = 'hash_with\nnewline"'
     screen._submit()
-    assert err.text == "Некорректный формат api_hash"
+    assert err.text == "Invalid api_hash format"
     assert not dismissed_result
 
     # 7. Valid credentials
@@ -416,7 +416,7 @@ async def test_chat_view_load_older_history_backend_error():
     async with app.run_test() as pilot:
         view = app.query_one(ChatView)
         await view.action_load_older()
-        assert any("Ошибка" in str(msg) for msg in notified)
+        assert any("Failed" in str(msg) for msg in notified)
 
 
 # ============================================================================
@@ -436,7 +436,7 @@ async def test_telethon_backend_start_connection_error():
 async def test_telethon_backend_load_get_me_none():
     backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
     backend._client.get_me = AsyncMock(return_value=None)
-    with pytest.raises(RuntimeError, match="get_me вернул None"):
+    with pytest.raises(RuntimeError, match="get_me returned None"):
         await backend.load()
 
 
@@ -515,7 +515,7 @@ async def test_app_message_sent_backend_exception():
         event = MagicMock()
         event.text = "Attempting to send during flood wait"
         await app.message_sent(event)
-        assert any("Ошибка отправки" in str(msg) for msg in notified)
+        assert any("Failed" in str(msg) for msg in notified)
 
 
 @pytest.mark.asyncio
@@ -535,7 +535,7 @@ async def test_app_play_voice_exceptions():
     app.notify = lambda msg, *args, **kwargs: notified.append(msg)
     async with app.run_test() as pilot:
         await app.play_selected_voice()
-        assert any("Ошибка получения аудио" in str(m) for m in notified)
+        assert any("Failed" in str(m) for m in notified)
 
 
 @pytest.mark.asyncio
@@ -555,7 +555,7 @@ async def test_app_open_media_photo_exceptions():
     app.notify = lambda msg, *args, **kwargs: notified.append(msg)
     async with app.run_test() as pilot:
         await app.open_selected_media()
-        assert any("Ошибка загрузки фото" in str(m) for m in notified)
+        assert any("Failed" in str(m) for m in notified)
 
 
 @pytest.mark.asyncio

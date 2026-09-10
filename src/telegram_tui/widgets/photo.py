@@ -24,7 +24,7 @@ class PhotoWidget(Static):
     """
 
     def __init__(self, message: Message, backend) -> None:  # noqa: ANN001
-        super().__init__("🖼 фото — загрузка…", markup=False)
+        super().__init__("🖼 photo — loading…", markup=False)
         self._message = message
         self._backend = backend
 
@@ -35,10 +35,10 @@ class PhotoWidget(Static):
         try:
             path = await self._backend.fetch_photo(self._message)
         except Exception as exc:  # noqa: BLE001
-            self.update(f"🖼 фото недоступно ({exc})")
+            self.update(f"🖼 photo unavailable ({exc})")
             return
         if path is None:
-            self.update("🖼 фото")
+            self.update("🖼 photo")
             return
         cols = max(24, min(64, self.app.size.width - 48))
         rows = max(8, int(cols * 0.5))
@@ -53,8 +53,8 @@ class PhotoWidget(Static):
         )
         if ansi is None:
             self.update(
-                f"🖼 фото сохранено: {Path(path).name} "
-                f"(установите '{self.app.config.photo_renderer}' для превью)"
+                f"🖼 photo saved: {Path(path).name} "
+                f"(install '{self.app.config.photo_renderer}' for terminal preview)"
             )
             return
         self.update(Text.from_ansi(ansi.rstrip("\n")))

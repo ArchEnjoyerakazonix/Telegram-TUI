@@ -151,7 +151,7 @@ async def test_wrong_code_shows_error_and_allows_retry(live_app):
     await pilot.press(*"00000")
     await pilot.press("enter")
     assert await wait_until(
-        pilot, lambda: "Ошибка" in str(app.screen.query_one("#auth-error").content)
+        pilot, lambda: "Error" in str(app.screen.query_one("#auth-error").content)
     )
     # Input is editable again and a good code completes the login.
     assert app.screen.query_one("#auth-input").disabled is False

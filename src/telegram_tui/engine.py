@@ -46,18 +46,18 @@ CODE_SNIPPETS = [
 ]
 
 INCOMING_TEXTS = [
-    "Кто-нибудь смотрел новый релиз Textual?",
-    "Го созвон в 18:00?",
-    "Скинь, пожалуйста, конфиг ещё раз 🙏",
-    "У меня снова упал CI, смотрю логи.",
-    "Кстати, SIGWINCH больше не теряется после апдейта ядра 👍",
-    "Подтверждаю: после перезапуска всё работает.",
-    "Кто последний трогал compositor.py?",
-    "Нашёл классный канал про embedded Linux, кину позже.",
-    "Тестирую клиент в tmux — рендер ровный, ресайз ловится.",
-    "Плюсую, у меня то же самое на Arch.",
-    "Не забудьте про миграцию схемы в пятницу.",
-    "Отправил PR, ревью приветствуется.",
+    "Has anyone checked out the latest Textual release?",
+    "Quick sync at 18:00?",
+    "Could you share your config once again please? 🙏",
+    "CI failed again, inspecting logs...",
+    "By the way, SIGWINCH is no longer lost after the kernel update 👍",
+    "Confirmed: everything works smoothly after restart.",
+    "Who touched compositor.py last?",
+    "Found a great channel about embedded Linux, will share later.",
+    "Testing client in tmux — clean render and smooth resize.",
+    "Same here on Arch Linux, works great.",
+    "Don't forget the schema migration this Friday.",
+    "Submitted the PR, reviews are welcome.",
 ]
 
 
@@ -178,19 +178,19 @@ class MockEngine(BaseBackend):
         a = next(u.id for u in self.users.values() if u.name == "Alice")
         b = next(u.id for u in self.users.values() if u.name == "Bob")
         k = next(u.id for u in self.users.values() if u.name == "Kate")
-        m1 = self._msg(devs.id, a, "Всем привет! Кто-нибудь пробовал новый compositor?", 240, reactions=[("🔥", 3), ("👀", 2)])
-        self._msg(devs.id, b, "Да, лагов меньше стало. И ресайз наконец ровный.", 236, reply_to=m1.id, reactions=[("👍", 4)])
+        m1 = self._msg(devs.id, a, "Hey everyone! Has anyone tried the new compositor?", 240, reactions=[("🔥", 3), ("👀", 2)])
+        self._msg(devs.id, b, "Yes, noticeably smoother and resize is pixel-perfect now.", 236, reply_to=m1.id, reactions=[("👍", 4)])
         self._snippet_msg(devs.id, a, 230)
-        self._msg(devs.id, k, "Забираю в проект, спасибо!", 228, reactions=[("💚", 5)])
+        self._msg(devs.id, k, "Pulling it into the project, thanks!", 228, reactions=[("💚", 5)])
         devs.unread = 2
-        devs.preview = "Забираю в проект, спасибо!"
+        devs.preview = "Pulling it into the project, thanks!"
 
         alice = self._chat("Alice", ChatType.PRIVATE, ["Alice"], pinned=True)
         alice.members_count = "online"
-        self._msg(alice.id, a, "Ты сегодня на созвоне будешь?", 180)
-        self._msg(alice.id, me.id, "Буду. Начинаем в 18:00?", 175)
-        self._msg(alice.id, a, "Да, скинула приглашение в календарь 📅", 170)
-        self._msg(alice.id, a, "Смотри, какой закат был вчера 🌇", 168, has_photo=True, media_type="photo", reactions=[("❤️", 3), ("✨", 2)])
+        self._msg(alice.id, a, "Will you be on the sync call today?", 180)
+        self._msg(alice.id, me.id, "Yes. Starting at 18:00?", 175)
+        self._msg(alice.id, a, "Yes, sent a calendar invite 📅", 170)
+        self._msg(alice.id, a, "Check out yesterday's sunset 🌇", 168, has_photo=True, media_type="photo", reactions=[("❤️", 3), ("✨", 2)])
         self._msg(alice.id, a, "", 165, media_type="sticker", sticker_emoji="✌️")
         self._msg(alice.id, me.id, "", 160, media_type="video_note", duration=10, reactions=[("🔥", 1)])
 
@@ -199,12 +199,12 @@ class MockEngine(BaseBackend):
         d = next(u.id for u in self.users.values() if u.name == "Dave")
         e = next(u.id for u in self.users.values() if u.name == "Eve")
         f = next(u.id for u in self.users.values() if u.name == "Frank")
-        self._msg(pychat.id, e, "dataclass vs pydantic — что берёте в 2026?", 300)
-        self._msg(pychat.id, d, "pydantic v2, без вариантов. Быстрее в разы.", 295, reply_to=self.messages[pychat.id][-1].id, reactions=[("🚀", 4)])
+        self._msg(pychat.id, e, "dataclass vs pydantic — what are you using in 2026?", 300)
+        self._msg(pychat.id, d, "pydantic v2 hands down. Order of magnitude faster.", 295, reply_to=self.messages[pychat.id][-1].id, reactions=[("🚀", 4)])
         self._snippet_msg(pychat.id, f, 290)
-        self._msg(pychat.id, e, "О, с model_validate даже проще, чем ждал.", 45)
-        self._msg(pychat.id, f, "Кто-нибудь юзал Textual с pytest-pilot? Как тесты?", 30)
-        self._msg(pychat.id, d, "Да, pilot.press работает отлично. Скинул пример ниже.", 12)
+        self._msg(pychat.id, e, "model_validate makes parsing so much cleaner.", 45)
+        self._msg(pychat.id, f, "Anyone testing Textual with pytest-pilot?", 30)
+        self._msg(pychat.id, d, "Yes, pilot.press works great. Posted a snippet below.", 12)
         self._snippet_msg(pychat.id, d, 11)
         pychat.unread = 5
 
@@ -212,37 +212,37 @@ class MockEngine(BaseBackend):
         arch.is_read_only = True
         arch.members_count = "8,302 subscribers"
         ab = self.members[arch.id][0]
-        self._msg(arch.id, ab, "📢 Вышел linux 7.1.9: обновления драйверов и фиксы планировщика.", 600, reactions=[("🎉", 42), ("🔥", 18)])
-        self._msg(arch.id, ab, "⚠️ Внимание: requires reinstall of virtualbox-modules before reboot.", 480)
+        self._msg(arch.id, ab, "📢 Linux 7.1.9 released: updated drivers and scheduler patches.", 600, reactions=[("🎉", 42), ("🔥", 18)])
+        self._msg(arch.id, ab, "⚠️ Notice: requires reinstall of virtualbox-modules before reboot.", 480)
         self._snippet_msg(arch.id, ab, 120)
         arch.unread = 12
 
         bob = self._chat("Bob", ChatType.PRIVATE, ["Bob"])
         bob.members_count = "last seen 15 min ago"
         bo = next(u.id for u in self.users.values() if u.name == "Bob")
-        self._msg(bob.id, bo, "Слушай, а ты видел PR #42?", 95, has_voice=True, media_type="voice", duration=21, reactions=[("👍", 2)])
+        self._msg(bob.id, bo, "Hey, have you seen PR #42?", 95, has_voice=True, media_type="voice", duration=21, reactions=[("👍", 2)])
         bob.unread = 1
 
         work = self._chat("Work · Deploy Squad", ChatType.GROUP, ["PM Olga", "SRE Max"])
-        self._msg(work.id, next(u.id for u in self.users.values() if u.name == "SRE Max"), "Deploy прошёл, error rate 0.01%.", 200)
+        self._msg(work.id, next(u.id for u in self.users.values() if u.name == "SRE Max"), "Deployment succeeded, error rate 0.01%.", 200)
         self._snippet_msg(work.id, next(u.id for u in self.users.values() if u.name == "PM Olga"), 190)
 
         mom = self._chat("Mom", ChatType.PRIVATE, ["Mom"])
         mo = next(u.id for u in self.users.values() if u.name == "Mom")
-        self._msg(mom.id, mo, "Позвони, как сможешь ❤️", 700)
+        self._msg(mom.id, mo, "Call me whenever you can ❤️", 700)
 
         docker = self._chat("Docker Club", ChatType.GROUP, ["Grace", "Linus"])
         self._snippet_msg(docker.id, next(u.id for u in self.users.values() if u.name == "Grace"), 400)
         self._msg(
             docker.id,
             next(u.id for u in self.users.values() if u.name == "Linus"),
-            "Скриншот мониторинга после чистки docker system prune 📉",
+            "System monitoring graph after docker system prune 📉",
             395,
             has_photo=True,
         )
 
         books = self._chat("Sci-Fi Books", ChatType.CHANNEL, ["bookbot"])
-        self._msg(books.id, self.members[books.id][0], "Книга недели: «Ложная слепота» Питера Уоттса.", 900)
+        self._msg(books.id, self.members[books.id][0], "Book of the week: 'Blindsight' by Peter Watts.", 900)
 
         cibot = self._chat("CI Bot", ChatType.PRIVATE, ["cibot"])
         self._snippet_msg(cibot.id, self.members[cibot.id][0], 60)
@@ -322,11 +322,11 @@ class MockEngine(BaseBackend):
         def factory() -> Message:
             text = self._rng.choice(
                 [
-                    "Ок, понял, отвечу чуть позже 👌",
-                    "Ха, я как раз про это думал!",
-                    "Принято. Добавил в таску.",
-                    "Согласен, давай так и сделаем.",
-                    "А можно подробнее? Что-то не воспроизвёл.",
+                    "Got it, will reply shortly 👌",
+                    "Ha, I was just thinking about that!",
+                    "Acknowledged. Added to the backlog.",
+                    "Agreed, let's go with that approach.",
+                    "Could you elaborate a bit? Couldn't reproduce.",
                 ]
             )
             return self._incoming(chat_id, sender_id, text, deliver=False)
@@ -386,11 +386,11 @@ class MockEngine(BaseBackend):
         oldest = self.messages[chat_id][0]
         older_msgs: list[Message] = []
         texts = [
-            "Ранее обсуждали архитектуру очередей сообщений и ресайз.",
-            "Проверил производительность парсера: x3 прирост скорости.",
-            "Подготовил PR с новыми контрастными стилями сайдбара.",
-            "Отлично, интеграционные тесты прошли успешно.",
-            "Двигаемся дальше по бэклогу релиза.",
+            "Earlier we discussed the message queue architecture and terminal resize.",
+            "Benchmarked parser throughput: 3x speed improvement.",
+            "Prepared a PR with high-contrast sidebar theme adjustments.",
+            "Integration test suite passed smoothly.",
+            "Continuing with the release roadmap items.",
         ]
         members = [uid for uid in self.members.get(chat_id, [])] or [self.me.id]
         for i in range(min(5, limit)):

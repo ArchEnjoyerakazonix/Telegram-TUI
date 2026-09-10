@@ -31,7 +31,7 @@ class VoicePlayer:
         self.stop()
         if shutil.which(self.player_cmd) is None:
             raise MediaPlayerNotFound(
-                f"проигрыватель '{self.player_cmd}' не найден в PATH"
+                f"media player '{self.player_cmd}' not found in PATH"
             )
         self._proc = subprocess.Popen(
             [self.player_cmd, "--no-video", "--really-quiet", str(path)],

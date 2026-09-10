@@ -34,7 +34,7 @@ class TelethonBackend(BaseBackend):
             from telethon import TelegramClient, errors
         except ImportError as exc:  # pragma: no cover - environment-specific
             raise RuntimeError(
-                "Для live-режима установите Telethon: pip install 'telegram-tui[live]'"
+                "To use live mode, install Telethon: pip install 'telegram-tui[live]'"
             ) from exc
 
         self._errors = errors
@@ -72,7 +72,7 @@ class TelethonBackend(BaseBackend):
 
         me = await self._client.get_me()
         if me is None:
-            raise RuntimeError("Не удалось получить профиль пользователя (get_me вернул None)")
+            raise RuntimeError("Failed to fetch user profile (get_me returned None)")
         self.users[me.id] = _display_name(me)
         self.me_id = me.id
 
@@ -183,15 +183,15 @@ class TelethonBackend(BaseBackend):
         fallback_text = tm.message or ""
         if not fallback_text:
             if media_type == "voice":
-                fallback_text = "🎙 голосовое сообщение"
+                fallback_text = "🎙 voice message"
             elif media_type == "video_note":
-                fallback_text = "⭕ видеосообщение"
+                fallback_text = "⭕ video note"
             elif media_type == "sticker":
-                fallback_text = f"🎭 стикер {sticker_emoji or ''}"
+                fallback_text = f"🎭 sticker {sticker_emoji or ''}".strip()
             elif media_type == "photo":
-                fallback_text = "🖼 фото"
+                fallback_text = "🖼 photo"
             elif getattr(tm, "media", None):
-                fallback_text = "📎 вложение"
+                fallback_text = "📎 attachment"
 
         # Waveform for audio/voice
         waveform = None
