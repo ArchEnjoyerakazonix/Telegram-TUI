@@ -22,17 +22,30 @@ class LoginScreen(ModalScreen[bool]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     DEFAULT_CSS = """
-    LoginScreen { align: center middle; background: $background 60%; }
+    LoginScreen { align: center middle; background: #000000 70%; }
     #auth-box {
-        width: 64;
+        width: 70;
         height: auto;
-        padding: 1 2;
-        background: $surface;
-        border: round $accent;
+        padding: 2 3;
+        background: #16161e;
+        border: heavy #7aa2f7;
     }
-    #auth-title { text-style: bold; margin-bottom: 1; }
-    #auth-error { color: $error; min-height: 1; margin-top: 1; }
-    #auth-hint { color: $text-muted; margin-top: 1; }
+    #auth-title { text-style: bold; color: #7aa2f7; margin-bottom: 1; }
+    #auth-error { color: #f7768e; min-height: 1; margin-top: 1; }
+    #auth-hint { color: #a9b1d6; margin-top: 1; margin-bottom: 1; }
+    #auth-box Input {
+        margin-bottom: 1;
+        background: #1f2335;
+        border: solid #414868;
+        color: #c0caf5;
+    }
+    #auth-box Input:focus {
+        border: solid #b7e680;
+    }
+    .auth-btn {
+        width: 1fr;
+        margin-bottom: 1;
+    }
     """
 
     def __init__(self, backend: BaseBackend) -> None:
@@ -41,20 +54,31 @@ class LoginScreen(ModalScreen[bool]):
         self.step = "phone"
 
     def compose(self) -> ComposeResult:
+        from textual.widgets import Button
+
         with Center():
             with Vertical(id="auth-box"):
                 title, placeholder, password = _STEPS[self.step]
-                yield Static(title, id="auth-title")
+                yield Static(f"🔑 {title}", id="auth-title")
                 yield Input(placeholder=placeholder, password=password, id="auth-input")
                 yield Static("", id="auth-error", markup=False)
                 yield Static(
-                    "Press Enter to continue, Esc to cancel. "
+                    "Press Enter to submit, Esc to cancel.\n"
                     "Confirmation code will arrive in Telegram or via SMS.",
                     id="auth-hint",
                 )
+                yield Button("Continue (Enter)", id="btn-auth-submit", classes="auth-btn btn-primary")
+                yield Button("Cancel (Esc)", id="btn-auth-cancel", classes="auth-btn btn-secondary")
 
     def on_mount(self) -> None:
         self.query_one(Input).focus()
+
+    def on_button_pressed(self, event) -> None:  # noqa: ANN001
+        if getattr(event.button, "id", None) == "btn-auth-submit":
+            inp = self.query_one("#auth-input", Input)
+            self.post_message(Input.Submitted(inp, inp.value))
+        else:
+            self.dismiss(False)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "auth-input" or event.input.disabled:
@@ -87,7 +111,7 @@ class LoginScreen(ModalScreen[bool]):
     def _switch(self, step: str) -> None:
         self.step = step
         title, placeholder, password = _STEPS[step]
-        self.query_one("#auth-title", Static).update(title)
+        self.query_one("#auth-title", Static).update(f"🔑 {title}")
         error = self.query_one("#auth-error", Static)
         error.update("…")
         if step == "password":

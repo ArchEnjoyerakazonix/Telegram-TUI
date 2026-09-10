@@ -16,13 +16,39 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-traffic", action="store_true", help="run mock mode without background incoming traffic")
     parser.add_argument("--welcome", action="store_true", help="show welcome and mode selection screen")
     parser.add_argument("--print-config", action="store_true", help="print sample configuration and exit")
+    parser.add_argument("--reset", action="store_true", help="clear session files, media cache, and exit")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    import tempfile
+    from pathlib import Path
+
     args = build_parser().parse_args(argv)
     if args.print_config:
         print(EXAMPLE_CONFIG)
+        return 0
+
+    if args.reset:
+        cleared = []
+        for pattern in ("*.session", "*.session-journal"):
+            for p in Path(".").glob(pattern):
+                p.unlink(missing_ok=True)
+                cleared.append(str(p))
+            cfg_dir = Path.home() / ".config" / "telegram-tui"
+            if cfg_dir.exists():
+                for p in cfg_dir.glob(pattern):
+                    p.unlink(missing_ok=True)
+                    cleared.append(str(p))
+            for p in Path.home().glob(pattern):
+                p.unlink(missing_ok=True)
+                cleared.append(str(p))
+        media_dir = Path(tempfile.gettempdir()) / "telegram-tui-media"
+        if media_dir.exists():
+            import shutil
+            shutil.rmtree(media_dir, ignore_errors=True)
+            cleared.append(str(media_dir))
+        print(f"Cache and sessions cleared successfully ({len(cleared)} items removed).")
         return 0
 
     config = Config.load(path=args.config)
