@@ -167,3 +167,98 @@ class WelcomeScreen(ModalScreen[str]):
 
     def action_choose_demo(self) -> None:
         self.dismiss("demo")
+
+
+class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
+    """Modal dialog to input and save Telegram API ID and API Hash."""
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    DEFAULT_CSS = """
+    ApiCredentialsScreen { align: center middle; background: #000000 70%; }
+    #api-box {
+        width: 72;
+        height: auto;
+        padding: 2 3;
+        background: #16161e;
+        border: heavy #7aa2f7;
+    }
+    #api-title { color: #7aa2f7; text-style: bold; margin-bottom: 1; }
+    #api-desc { color: #a9b1d6; margin-bottom: 1; }
+    #api-error { color: #f7768e; margin-bottom: 1; height: 1; }
+    #api-box Input {
+        margin-bottom: 1;
+        background: #1f2335;
+        border: solid #3b4261;
+        color: #c0caf5;
+    }
+    #api-box Input:focus { border: solid #b7e680; }
+    .api-btn {
+        width: 1fr;
+        margin-bottom: 1;
+        background: #24283b;
+        color: #f0f0f0;
+        border: tall #414868;
+    }
+    .api-btn:focus, .api-btn:hover {
+        background: #b7e680;
+        color: #111413;
+        text-style: bold;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import Button
+
+        with Center():
+            with Vertical(id="api-box"):
+                yield Static("🔑 Настройка Telegram API", id="api-title")
+                yield Static(
+                    "Для прямого подключения требуются api_id и api_hash.\n"
+                    "Их можно бесплатно получить на https://my.telegram.org -> 'API development tools'.",
+                    id="api-desc",
+                )
+                yield Static("", id="api-error")
+                yield Input(placeholder="App api_id (число, например 12345678)", id="input-api-id")
+                yield Input(placeholder="App api_hash (строка 32 символа)", id="input-api-hash")
+                yield Button("💾 Сохранить и перейти к авторизации", id="btn-save-api", classes="api-btn")
+                yield Button("Отмена (вернуться в Демо-режим)", id="btn-cancel-api", classes="api-btn")
+
+    def on_button_pressed(self, event) -> None:  # noqa: ANN001
+        if getattr(event.button, "id", None) == "btn-save-api":
+            self._submit()
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "input-api-id":
+            self.query_one("#input-api-hash", Input).focus()
+        else:
+            self._submit()
+
+    def _submit(self) -> None:
+        raw_id = self.query_one("#input-api-id", Input).value.strip()
+        raw_hash = self.query_one("#input-api-hash", Input).value.strip()
+        error = self.query_one("#api-error", Static)
+
+        if not raw_id:
+            error.update("Укажите api_id")
+            self.query_one("#input-api-id", Input).focus()
+            return
+        try:
+            api_id = int(raw_id)
+        except ValueError:
+            error.update("api_id должен быть целым числом")
+            self.query_one("#input-api-id", Input).focus()
+            return
+
+        if not raw_hash:
+            error.update("Укажите api_hash")
+            self.query_one("#input-api-hash", Input).focus()
+            return
+
+        self.dismiss((api_id, raw_hash))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+

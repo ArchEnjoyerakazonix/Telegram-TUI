@@ -83,6 +83,7 @@ class TelegramTUI(App[None]):
         Binding("ctrl+down", "focus_panel('next')", "Next panel", priority=True),
         Binding("ctrl+up", "focus_panel('prev')", "Prev panel", priority=True),
         Binding("escape", "back_to_list", "Back to chats", priority=True),
+        Binding("o", "open_media", "Open media", priority=False),
         Binding("ctrl+p", "toggle_pin", "Pin chat", priority=True),
         Binding("ctrl+m", "mark_read", "Mark read", priority=True),
         Binding("ctrl+u", "force_incoming", "Simulate msg", priority=True),
@@ -159,13 +160,24 @@ class TelegramTUI(App[None]):
 
     async def _show_welcome_and_start(self) -> None:
         mode = await self.push_screen_wait(WelcomeScreen())
-        if mode == "live":
+        if mode == "login":
+            if not self.config.api_id or not self.config.api_hash:
+                from .auth import ApiCredentialsScreen
+
+                creds = await self.push_screen_wait(ApiCredentialsScreen())
+                if creds is None:
+                    self._init_ui()
+                    return
+                self.config.api_id, self.config.api_hash = creds
+                self.config.mode = "live"
+                try:
+                    Config.save_credentials(self.config.api_id, self.config.api_hash, session=self.config.session)
+                    self.notify("Ключи сохранены в ~/.config/telegram-tui/config.toml")
+                except Exception:
+                    pass
+
             from .telethon_backend import TelethonBackend
 
-            if not self.config.api_id or not self.config.api_hash:
-                self.notify("Для live-режима укажите api_id и api_hash в config.toml", severity="error")
-                self._init_ui()
-                return
             self.engine = TelethonBackend(self.config.api_id, self.config.api_hash, self.config.session)
             await self._bootstrap()
         else:
@@ -409,6 +421,41 @@ class TelegramTUI(App[None]):
 
     def action_stop_voice(self) -> None:
         self.voice_player.stop()
+
+    async def open_selected_media(self) -> None:
+        view = self.query_one(ChatView)
+        message = view.selected_message()
+        if message is None:
+            return
+
+        from .media import open_external_media
+
+        if message.has_photo:
+            path = await self.engine.fetch_photo(message)
+            if path and path.exists():
+                open_external_media(path)
+                self.notify(f"🖼 Открываю {path.name} во внешнем просмотрщике")
+            else:
+                self.notify("Фотография недоступна", severity="error")
+            return
+
+        if message.media_type in ("video_note", "video", "document"):
+            path = await self.engine.fetch_voice(message)
+            if path and path.exists():
+                open_external_media(path)
+                self.notify(f"⭕ Открываю {path.name} в видеоплеере")
+            else:
+                self.notify("Медиафайл недоступен", severity="error")
+            return
+
+        if message.has_voice or message.media_type == "voice":
+            await self.play_selected_voice()
+            return
+
+        self.notify("На выбранном сообщении нет файлов для открытия (клавиша o)", severity="warning")
+
+    def action_open_media(self) -> None:
+        self.run_worker(self.open_selected_media())
 
     def on_unmount(self) -> None:
         self.voice_player.stop()

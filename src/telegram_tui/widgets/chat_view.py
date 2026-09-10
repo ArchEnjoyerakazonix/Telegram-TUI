@@ -135,14 +135,23 @@ class MessageWidget(Vertical):
             yield Static(quote, classes="msg-reply", markup=False)
 
         if self.message.has_voice or self.message.media_type == "voice":
+            from ..media import format_waveform
+
             dur = f" ({self.message.duration}с)" if self.message.duration else ""
-            yield Static(f"🎙 [bold #ff9e64]голосовое сообщение{dur}[/] — нажмите [bold]v[/], чтобы прослушать",
-                         classes="msg-voice", markup=True)
+            wave = format_waveform(self.message.waveform, width=18)
+            yield Static(
+                f"🎙 [bold #ff9e64]голосовое{dur}[/]  [bold #7aa2f7]{wave}[/]  [dim]v: звук, o: открыть[/]",
+                classes="msg-voice",
+                markup=True,
+            )
 
         if self.message.media_type == "video_note":
             dur = f" ({self.message.duration}с)" if self.message.duration else ""
-            yield Static(f"⭕ [bold #7aa2f7]видеосообщение-кружочек{dur}[/] — нажмите [bold]v[/] для открытия в mpv",
-                         classes="msg-video", markup=True)
+            yield Static(
+                f"⭕ [bold #7aa2f7]видеосообщение-кружочек{dur}[/]  [dim]o / v: открыть в mpv (PIP)[/]",
+                classes="msg-video",
+                markup=True,
+            )
 
         if self.message.media_type == "sticker" or self.message.sticker_emoji:
             emoji = self.message.sticker_emoji or "🎭"
@@ -195,6 +204,7 @@ class ChatView(VerticalScroll):
         Binding("g,g", "sel_first", "First", show=False),
         Binding("r", "app_reply", "Reply"),
         Binding("v", "app_voice", "Play voice"),
+        Binding("o", "app_open_media", "Open media"),
         Binding("/", "app_find", "Find in chat"),
         Binding("ctrl+o", "load_older", "Load history", priority=True),
         Binding("n", "next_hit", show=False),
@@ -309,6 +319,9 @@ class ChatView(VerticalScroll):
 
     async def action_app_voice(self) -> None:
         await self.app.play_selected_voice()
+
+    async def action_app_open_media(self) -> None:
+        await self.app.open_selected_media()
 
     def action_app_find(self) -> None:
         self.app.action_search_in_chat()

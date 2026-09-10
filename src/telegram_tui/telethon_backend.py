@@ -189,6 +189,16 @@ class TelethonBackend(BaseBackend):
             elif getattr(tm, "media", None):
                 fallback_text = "📎 вложение"
 
+        # Waveform for audio/voice
+        waveform = None
+        if getattr(tm, "voice", None) and hasattr(tm, "document") and tm.document:
+            attrs = getattr(tm.document, "attributes", [])
+            for attr in attrs:
+                raw_wave = getattr(attr, "waveform", None)
+                if raw_wave:
+                    waveform = list(raw_wave)
+                    break
+
         msg = Message(
             id=tm.id,
             chat_id=chat_id,
@@ -202,6 +212,7 @@ class TelethonBackend(BaseBackend):
             duration=duration,
             sticker_emoji=sticker_emoji,
             reactions=reactions,
+            waveform=waveform,
         )
         self._tmsg[(chat_id, tm.id)] = tm
         return msg

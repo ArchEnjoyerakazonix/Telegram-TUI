@@ -92,3 +92,30 @@ class Config(BaseModel):
                 "(получить на https://my.telegram.org)"
             )
         return cfg
+
+    @classmethod
+    def save_credentials(
+        cls,
+        api_id: int,
+        api_hash: str,
+        mode: str = "live",
+        session: str = "telegram-tui",
+        path: Path | str | None = None,
+    ) -> Path:
+        """Persist API credentials to disk (defaults to ~/.config/telegram-tui/config.toml)."""
+        if path is not None:
+            target = Path(path)
+        else:
+            target = Path.home() / ".config" / "telegram-tui" / "config.toml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = (
+            "# telegram-tui configuration\n"
+            f'mode = "{mode}"\n'
+            f"api_id = {api_id}\n"
+            f'api_hash = "{api_hash}"\n'
+            f'session = "{session}"\n'
+            'media_player = "mpv"\n'
+            'photo_renderer = "chafa"\n'
+        )
+        target.write_text(content, encoding="utf-8")
+        return target

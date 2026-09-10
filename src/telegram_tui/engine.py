@@ -137,7 +137,13 @@ class MockEngine(BaseBackend):
         duration: int | None = None,
         sticker_emoji: str | None = None,
         reactions: list[tuple[str, int]] | None = None,
+        waveform: list[int] | None = None,
     ) -> Message:
+        if (has_voice or media_type == "voice") and waveform is None:
+            import math
+
+            waveform = [int(12 + 10 * math.sin(i * 0.6) + 4 * math.cos(i * 1.5)) for i in range(20)]
+
         msg = Message(
             id=self._id(),
             chat_id=chat_id,
@@ -151,6 +157,7 @@ class MockEngine(BaseBackend):
             duration=duration,
             sticker_emoji=sticker_emoji,
             reactions=reactions or [],
+            waveform=waveform,
         )
         self.messages[chat_id].append(msg)
         chat = self.chats[chat_id]

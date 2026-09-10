@@ -49,3 +49,4 @@ class Message(BaseModel):
     duration: int | None = None  # длительность для аудио/видео
     sticker_emoji: str | None = None
     reactions: list[tuple[str, int]] = Field(default_factory=list)
+    waveform: list[int] | None = None
