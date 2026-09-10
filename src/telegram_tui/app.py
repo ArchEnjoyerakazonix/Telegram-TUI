@@ -9,9 +9,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message as TextualMessage
-from textual.widgets import Footer, Header, Input, ListView
+from textual.widgets import Footer, Header, Input, ListView, Static
 
-from .auth import LoginScreen
+from .auth import LoginScreen, WelcomeScreen
 from .backend import BaseBackend
 from .config import Config
 from .engine import MockEngine
@@ -43,26 +43,43 @@ class TelegramTUI(App[None]):
         width: 36;
         min-width: 24;
         height: 1fr;
-        background: $surface;
-        border-right: heavy $panel;
+        background: #16161e;
+        border-right: solid #2a2e3f;
     }
-    #search { height: 3; margin: 0; border-bottom: solid $panel; }
-    #search:focus { border-bottom: solid $accent; }
-    ChatList { height: 1fr; }
-    #main { width: 1fr; height: 1fr; }
-    #msg-search { display: none; }
-    ChatView { height: 1fr; }
+    #search {
+        height: 3;
+        margin: 0;
+        background: #1f2335;
+        border: solid #2a2e3f;
+        color: #c0caf5;
+    }
+    #search:focus { border: solid #b7e680; }
+    ChatList { height: 1fr; background: #16161e; }
+    #main { width: 1fr; height: 1fr; background: #1a1b26; }
+    #msg-search { display: none; background: #1f2335; border: solid #b7e680; color: #c0caf5; }
+    ChatView { height: 1fr; background: #1a1b26; }
+    #channel-banner {
+        height: 3;
+        background: #1f2335;
+        color: #7aa2f7;
+        content-align: center middle;
+        text-style: bold;
+        border-top: solid #2a2e3f;
+        display: none;
+    }
     #composer {
         height: 5;
-        border: round $primary;
+        background: #16161e;
+        border: round #3b4261;
     }
-    #composer:focus { border: round $accent; }
+    #composer:focus { border: round #b7e680; }
     """
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("ctrl+f", "focus_panel('search')", "Search", priority=True),
         Binding("ctrl+e", "search_in_chat", "Find in chat", priority=True),
+        Binding("ctrl+o", "load_older_history", "Load history", priority=True),
         Binding("ctrl+down", "focus_panel('next')", "Next panel", priority=True),
         Binding("ctrl+up", "focus_panel('prev')", "Prev panel", priority=True),
         Binding("escape", "back_to_list", "Back to chats", priority=True),
@@ -76,11 +93,13 @@ class TelegramTUI(App[None]):
         engine: BaseBackend | None = None,
         live_traffic: bool = True,
         config: Config | None = None,
+        show_welcome: bool = False,
     ) -> None:
         super().__init__()
         self.engine = engine or MockEngine()
         self.live_traffic = live_traffic
         self.config = config or Config()
+        self.show_welcome = show_welcome
         self.current_chat_id: int | None = None
         self._search_query = ""
         self.pending_reply: tuple[int, int] | None = None
@@ -100,10 +119,15 @@ class TelegramTUI(App[None]):
                     id="msg-search",
                 )
                 yield ChatView(self.engine)
+                yield Static("📢 Канал — только для чтения (отправка сообщений ограничена)", id="channel-banner")
                 yield Composer(id="composer", placeholder="Write a message… (Enter — send, Alt+Enter — newline)")
         yield Footer()
 
     def on_mount(self) -> None:
+        if self.show_welcome:
+            self.run_worker(self._show_welcome_and_start(), exclusive=True)
+            return
+
         if self.engine.is_mock:
             self._init_ui()
             if self.live_traffic:
@@ -128,6 +152,26 @@ class TelegramTUI(App[None]):
             return
         self.engine.on_incoming = lambda msg: self.post_message(BackendIncoming(msg))
         self._init_ui()
+
+    def action_load_older_history(self) -> None:
+        view = self.query_one(ChatView)
+        self.run_worker(view.action_load_older())
+
+    async def _show_welcome_and_start(self) -> None:
+        mode = await self.push_screen_wait(WelcomeScreen())
+        if mode == "live":
+            from .telethon_backend import TelethonBackend
+
+            if not self.config.api_id or not self.config.api_hash:
+                self.notify("Для live-режима укажите api_id и api_hash в config.toml", severity="error")
+                self._init_ui()
+                return
+            self.engine = TelethonBackend(self.config.api_id, self.config.api_hash, self.config.session)
+            await self._bootstrap()
+        else:
+            self._init_ui()
+            if self.live_traffic:
+                self.set_interval(self.config.traffic_interval, self._engine_tick)
 
     def _init_ui(self) -> None:
         if self.engine.is_mock:
@@ -173,6 +217,17 @@ class TelegramTUI(App[None]):
             view.mount(Static("Загрузка истории…", markup=False))
         else:
             view.show_chat(self.engine.chats[chat_id])
+
+        # Read-only channel banner handling
+        channel_banner = self.query_one("#channel-banner", Static)
+        composer = self.query_one("#composer", Composer)
+        if getattr(chat, "is_read_only", False):
+            channel_banner.display = True
+            composer.display = False
+        else:
+            channel_banner.display = False
+            composer.display = True
+
         self.refresh_chat_list()
 
     @on(ListView.Selected, "#chat-list")

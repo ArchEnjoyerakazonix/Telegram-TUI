@@ -65,7 +65,14 @@ class BaseBackend(ABC):
     def send(self, chat_id: int, text: str, reply_to: int | None = None):
         """Send a message; returns Message (mock: sync, live: coroutine)."""
 
-    # -- media ---------------------------------------------------------------
+    # -- media & interactions ------------------------------------------------
+    async def fetch_more_history(self, chat_id: int, offset_id: int, limit: int = 30) -> list[Message]:
+        """Fetch older messages preceding offset_id."""
+        return []
+
+    async def add_reaction(self, chat_id: int, message_id: int, emoji: str) -> None:
+        """Add a reaction emoji to a message."""
+        pass
 
     async def fetch_voice(self, message: Message) -> Path | None:
         return None

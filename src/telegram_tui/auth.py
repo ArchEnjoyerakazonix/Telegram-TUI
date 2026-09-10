@@ -105,3 +105,65 @@ class LoginScreen(ModalScreen[bool]):
 
     def action_cancel(self) -> None:
         self.dismiss(False)
+
+
+class WelcomeScreen(ModalScreen[str]):
+    """Welcome and onboarding screen: choose between real Telegram and mock demo."""
+
+    BINDINGS = [("escape", "choose_demo", "Explore Demo")]
+
+    DEFAULT_CSS = """
+    WelcomeScreen { align: center middle; background: #000000 70%; }
+    #welcome-box {
+        width: 68;
+        height: auto;
+        padding: 2 3;
+        background: #16161e;
+        border: heavy #b7e680;
+    }
+    #welcome-badge { color: #b7e680; text-style: bold; margin-bottom: 1; }
+    #welcome-title { text-style: bold; color: #f0f0f0; margin-bottom: 1; }
+    #welcome-desc { color: #a9b1d6; margin-bottom: 1; }
+    .welcome-btn {
+        width: 1fr;
+        margin-bottom: 1;
+        background: #24283b;
+        color: #f0f0f0;
+        border: tall #414868;
+    }
+    .welcome-btn:focus, .welcome-btn:hover {
+        background: #b7e680;
+        color: #111413;
+        text-style: bold;
+    }
+    #welcome-note { color: #565f89; margin-top: 1; text-align: center; }
+    """
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import Button
+
+        with Center():
+            with Vertical(id="welcome-box"):
+                yield Static("⚡ TELEGRAM / TUI  •  v0.4.0", id="welcome-badge")
+                yield Static("Твой Telegram. Полностью в терминале.", id="welcome-title")
+                yield Static(
+                    "Быстрый, легковесный TUI-клиент для клавиатурного управления.\n"
+                    "Выберите способ запуска:",
+                    id="welcome-desc",
+                )
+                yield Button("🚀 Войти в реальный Telegram (Telethon)", id="btn-login", classes="welcome-btn")
+                yield Button("🎭 Запустить Демо-режим (Mock Workspace)", id="btn-demo", classes="welcome-btn")
+                yield Static(
+                    "Конфигурация хранится в ~/.config/telegram-tui/config.toml\n"
+                    "[Esc / Enter] для быстрого выбора демо-режима",
+                    id="welcome-note",
+                )
+
+    def on_button_pressed(self, event) -> None:  # noqa: ANN001
+        if getattr(event.button, "id", None) == "btn-login":
+            self.dismiss("login")
+        else:
+            self.dismiss("demo")
+
+    def action_choose_demo(self) -> None:
+        self.dismiss("demo")

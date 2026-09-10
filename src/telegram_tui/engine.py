@@ -128,11 +128,15 @@ class MockEngine(BaseBackend):
         self,
         chat_id: int,
         sender_id: int,
-        text: str,
+        text: str = "",
         minutes_ago: int = 0,
         reply_to: int | None = None,
         has_voice: bool = False,
         has_photo: bool = False,
+        media_type: str = "text",
+        duration: int | None = None,
+        sticker_emoji: str | None = None,
+        reactions: list[tuple[str, int]] | None = None,
     ) -> Message:
         msg = Message(
             id=self._id(),
@@ -143,11 +147,15 @@ class MockEngine(BaseBackend):
             reply_to=reply_to,
             has_voice=has_voice,
             has_photo=has_photo,
+            media_type=media_type,
+            duration=duration,
+            sticker_emoji=sticker_emoji,
+            reactions=reactions or [],
         )
         self.messages[chat_id].append(msg)
         chat = self.chats[chat_id]
         chat.last_activity = msg.timestamp
-        chat.preview = _one_line(text)
+        chat.preview = _one_line(text or f"[{media_type}]")
         return msg
 
     def _snippet_msg(self, chat_id: int, sender_id: int, minutes_ago: int) -> Message:
@@ -159,28 +167,33 @@ class MockEngine(BaseBackend):
         self.me = me
 
         devs = self._chat("Textual Devs", ChatType.GROUP, ["Alice", "Bob", "Kate"], pinned=True)
+        devs.members_count = "12 members · 4 online"
         a = next(u.id for u in self.users.values() if u.name == "Alice")
         b = next(u.id for u in self.users.values() if u.name == "Bob")
         k = next(u.id for u in self.users.values() if u.name == "Kate")
-        m1 = self._msg(devs.id, a, "Всем привет! Кто-нибудь пробовал новый compositor?", 240)
-        self._msg(devs.id, b, "Да, лагов меньше стало. И ресайз наконец ровный.", 236, reply_to=m1.id)
+        m1 = self._msg(devs.id, a, "Всем привет! Кто-нибудь пробовал новый compositor?", 240, reactions=[("🔥", 3), ("👀", 2)])
+        self._msg(devs.id, b, "Да, лагов меньше стало. И ресайз наконец ровный.", 236, reply_to=m1.id, reactions=[("👍", 4)])
         self._snippet_msg(devs.id, a, 230)
-        self._msg(devs.id, k, "Забираю в проект, спасибо!", 228)
+        self._msg(devs.id, k, "Забираю в проект, спасибо!", 228, reactions=[("💚", 5)])
         devs.unread = 2
         devs.preview = "Забираю в проект, спасибо!"
 
         alice = self._chat("Alice", ChatType.PRIVATE, ["Alice"], pinned=True)
+        alice.members_count = "online"
         self._msg(alice.id, a, "Ты сегодня на созвоне будешь?", 180)
         self._msg(alice.id, me.id, "Буду. Начинаем в 18:00?", 175)
         self._msg(alice.id, a, "Да, скинула приглашение в календарь 📅", 170)
-        self._msg(alice.id, a, "Смотри, какой закат был вчера 🌇", 168, has_photo=True)
+        self._msg(alice.id, a, "Смотри, какой закат был вчера 🌇", 168, has_photo=True, media_type="photo", reactions=[("❤️", 3), ("✨", 2)])
+        self._msg(alice.id, a, "", 165, media_type="sticker", sticker_emoji="✌️")
+        self._msg(alice.id, me.id, "", 160, media_type="video_note", duration=10, reactions=[("🔥", 1)])
 
         pychat = self._chat("Python Chat", ChatType.GROUP, ["Dave", "Eve", "Frank"])
+        pychat.members_count = "248 members · 32 online"
         d = next(u.id for u in self.users.values() if u.name == "Dave")
         e = next(u.id for u in self.users.values() if u.name == "Eve")
         f = next(u.id for u in self.users.values() if u.name == "Frank")
         self._msg(pychat.id, e, "dataclass vs pydantic — что берёте в 2026?", 300)
-        self._msg(pychat.id, d, "pydantic v2, без вариантов. Быстрее в разы.", 295, reply_to=self.messages[pychat.id][-1].id)
+        self._msg(pychat.id, d, "pydantic v2, без вариантов. Быстрее в разы.", 295, reply_to=self.messages[pychat.id][-1].id, reactions=[("🚀", 4)])
         self._snippet_msg(pychat.id, f, 290)
         self._msg(pychat.id, e, "О, с model_validate даже проще, чем ждал.", 45)
         self._msg(pychat.id, f, "Кто-нибудь юзал Textual с pytest-pilot? Как тесты?", 30)
@@ -189,15 +202,18 @@ class MockEngine(BaseBackend):
         pychat.unread = 5
 
         arch = self._chat("Arch Linux News", ChatType.CHANNEL, ["archbot"])
+        arch.is_read_only = True
+        arch.members_count = "8,302 subscribers"
         ab = self.members[arch.id][0]
-        self._msg(arch.id, ab, "📢 Вышел linux 7.1.9: обновления драйверов и фиксы планировщика.", 600)
+        self._msg(arch.id, ab, "📢 Вышел linux 7.1.9: обновления драйверов и фиксы планировщика.", 600, reactions=[("🎉", 42), ("🔥", 18)])
         self._msg(arch.id, ab, "⚠️ Внимание: requires reinstall of virtualbox-modules before reboot.", 480)
         self._snippet_msg(arch.id, ab, 120)
         arch.unread = 12
 
         bob = self._chat("Bob", ChatType.PRIVATE, ["Bob"])
+        bob.members_count = "last seen 15 min ago"
         bo = next(u.id for u in self.users.values() if u.name == "Bob")
-        self._msg(bob.id, bo, "Слушай, а ты видел PR #42?", 95, has_voice=True)
+        self._msg(bob.id, bo, "Слушай, а ты видел PR #42?", 95, has_voice=True, media_type="voice", duration=21, reactions=[("👍", 2)])
         bob.unread = 1
 
         work = self._chat("Work · Deploy Squad", ChatType.GROUP, ["PM Olga", "SRE Max"])
@@ -242,7 +258,11 @@ class MockEngine(BaseBackend):
         return None
 
     def sender_name(self, sender_id: int) -> str:
-        return self.users[sender_id].name
+        if sender_id in self.users:
+            return self.users[sender_id].name
+        if sender_id in self.chats:
+            return self.chats[sender_id].title
+        return str(sender_id)
 
     # -- actions ------------------------------------------------------------
 
@@ -351,3 +371,48 @@ class MockEngine(BaseBackend):
         members = [uid for uid in self.members.get(chat_id, []) if uid != self.me.id]
         sender_id = self._rng.choice(members)
         return self._incoming(chat_id, sender_id, self._rng.choice(INCOMING_TEXTS))
+
+    async def fetch_more_history(self, chat_id: int, offset_id: int, limit: int = 30) -> list[Message]:
+        """Generate older historical messages preceding offset_id."""
+        if chat_id not in self.messages or not self.messages[chat_id]:
+            return []
+        oldest = self.messages[chat_id][0]
+        older_msgs: list[Message] = []
+        texts = [
+            "Ранее обсуждали архитектуру очередей сообщений и ресайз.",
+            "Проверил производительность парсера: x3 прирост скорости.",
+            "Подготовил PR с новыми контрастными стилями сайдбара.",
+            "Отлично, интеграционные тесты прошли успешно.",
+            "Двигаемся дальше по бэклогу релиза.",
+        ]
+        members = [uid for uid in self.members.get(chat_id, [])] or [self.me.id]
+        for i in range(min(5, limit)):
+            msg_id = oldest.id - 100 + i
+            dt_past = oldest.timestamp - dt.timedelta(minutes=60 - i * 10)
+            sender_id = members[i % len(members)]
+            m = Message(
+                id=msg_id,
+                chat_id=chat_id,
+                sender_id=sender_id,
+                text=texts[i % len(texts)],
+                timestamp=dt_past,
+            )
+            older_msgs.append(m)
+        self.messages[chat_id] = older_msgs + self.messages[chat_id]
+        return older_msgs
+
+    async def add_reaction(self, chat_id: int, message_id: int, emoji: str) -> None:
+        msg = self.get_message(chat_id, message_id)
+        if not msg:
+            return
+        new_reactions: list[tuple[str, int]] = []
+        found = False
+        for e, count in msg.reactions:
+            if e == emoji:
+                new_reactions.append((e, count + 1))
+                found = True
+            else:
+                new_reactions.append((e, count))
+        if not found:
+            new_reactions.append((emoji, 1))
+        msg.reactions = new_reactions

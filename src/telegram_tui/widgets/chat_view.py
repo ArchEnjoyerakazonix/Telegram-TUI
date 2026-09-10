@@ -84,8 +84,24 @@ class MessageWidget(Vertical):
         padding-left: 1;
         text-style: italic;
     }
-    MessageWidget .msg-voice { color: $warning; text-style: italic; }
+    MessageWidget .msg-voice { color: #ff9e64; text-style: italic; }
+    MessageWidget .msg-video { color: #7aa2f7; text-style: italic; }
+    MessageWidget .msg-sticker { color: #bb9af7; }
+    MessageWidget .msg-reactions { margin-top: 1; }
     MessageWidget CodeBlock { margin: 0; }
+    .load-older {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+        margin: 0 0 1 0;
+        background: #24283b;
+        color: #b7e680;
+        text-align: center;
+        text-style: bold;
+    }
+    .load-older:hover {
+        background: #3b4261;
+    }
     """
 
     def __init__(
@@ -118,9 +134,19 @@ class MessageWidget(Vertical):
             quote.append(f": {first}", style="dim")
             yield Static(quote, classes="msg-reply", markup=False)
 
-        if self.message.has_voice:
-            yield Static("🎙 голосовое сообщение — нажмите v, чтобы прослушать",
-                         classes="msg-voice", markup=False)
+        if self.message.has_voice or self.message.media_type == "voice":
+            dur = f" ({self.message.duration}с)" if self.message.duration else ""
+            yield Static(f"🎙 [bold #ff9e64]голосовое сообщение{dur}[/] — нажмите [bold]v[/], чтобы прослушать",
+                         classes="msg-voice", markup=True)
+
+        if self.message.media_type == "video_note":
+            dur = f" ({self.message.duration}с)" if self.message.duration else ""
+            yield Static(f"⭕ [bold #7aa2f7]видеосообщение-кружочек{dur}[/] — нажмите [bold]v[/] для открытия в mpv",
+                         classes="msg-video", markup=True)
+
+        if self.message.media_type == "sticker" or self.message.sticker_emoji:
+            emoji = self.message.sticker_emoji or "🎭"
+            yield Static(f"🎭 [bold #bb9af7]стикер:[/] {emoji}", classes="msg-sticker", markup=True)
 
         for part in self._split_text(self.message.text):
             if part["kind"] == "code":
@@ -130,6 +156,13 @@ class MessageWidget(Vertical):
 
         if self.message.has_photo:
             yield PhotoWidget(self.message, self.app.engine)
+
+        if self.message.reactions:
+            r_text = Text()
+            for emoji, count in self.message.reactions:
+                r_text.append(f" {emoji} {count} ", style="bold #111413 on #7aa2f7")
+                r_text.append(" ")
+            yield Static(r_text, classes="msg-reactions")
 
     def set_selected(self, selected: bool) -> None:
         self.set_class(selected, "-selected")
@@ -163,12 +196,13 @@ class ChatView(VerticalScroll):
         Binding("r", "app_reply", "Reply"),
         Binding("v", "app_voice", "Play voice"),
         Binding("/", "app_find", "Find in chat"),
+        Binding("ctrl+o", "load_older", "Load history", priority=True),
         Binding("n", "next_hit", show=False),
         Binding("N", "prev_hit", show=False),
     ]
 
     DEFAULT_CSS = """
-    ChatView { height: 1fr; padding: 0 1; }
+    ChatView { height: 1fr; padding: 0 1; background: #1a1b26; }
     """
 
     def __init__(self, engine) -> None:  # noqa: ANN001 - avoids circular import
@@ -186,10 +220,32 @@ class ChatView(VerticalScroll):
         self.remove_children()
         self.hits = []
         self.hit_index = -1
+        self.mount(Static("⬆ Загрузить более ранние сообщения (Ctrl+O)", classes="load-older"))
         for message in self.engine.history(chat.id):
             self.mount(self._make_message_widget(message))
         self.scroll_end(animate=False, force=True)
         self.select(len(self._widgets()) - 1)
+
+    async def action_load_older(self) -> None:
+        if not self.chat_id:
+            return
+        widgets = self._widgets()
+        if not widgets:
+            return
+        oldest_id = widgets[0].message.id
+        older = await self.engine.fetch_more_history(self.chat_id, offset_id=oldest_id)
+        if older:
+            banners = self.query(".load-older")
+            banner = banners.first() if banners else None
+            for m in reversed(older):
+                w = self._make_message_widget(m)
+                if banner:
+                    self.mount(w, after=banner)
+                else:
+                    self.mount(w)
+            self.app.notify(f"Загружено {len(older)} более ранних сообщений", timeout=2)
+        else:
+            self.app.notify("Вы достигли начала истории сообщений", timeout=2)
 
     def append_message(self, message: Message, scroll: bool = True) -> MessageWidget:
         was_last_selected = self._selected >= len(self._widgets()) - 1

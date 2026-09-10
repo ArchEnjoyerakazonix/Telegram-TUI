@@ -85,6 +85,11 @@ class TelethonBackend(BaseBackend):
                 chat_type = ChatType.GROUP
             else:
                 chat_type = ChatType.PRIVATE
+
+            is_admin = bool(getattr(entity, "admin_rights", None) or getattr(entity, "creator", False))
+            is_read_only = bool(getattr(entity, "broadcast", False) and not is_admin)
+            members_count = getattr(entity, "participants_count", None)
+
             chat = Chat(
                 id=dialog.id,
                 title=dialog.name or _display_name(entity),
@@ -92,6 +97,8 @@ class TelethonBackend(BaseBackend):
                 pinned=bool(dialog.pinned),
                 unread=dialog.unread_count or 0,
                 last_activity=dialog.date or utcnow(),
+                is_read_only=is_read_only,
+                members_count=members_count,
             )
             self.chats[chat.id] = chat
             self.messages[chat.id] = []
@@ -139,15 +146,62 @@ class TelethonBackend(BaseBackend):
             except Exception:
                 self.users[sender_id] = str(sender_id)
         timestamp: dt.datetime = tm.date or utcnow()
+
+        media_type = "text"
+        sticker_emoji = None
+        duration = None
+
+        if getattr(tm, "voice", None):
+            media_type = "voice"
+            duration = getattr(tm.voice, "duration", None)
+        elif getattr(tm, "video_note", None):
+            media_type = "video_note"
+            duration = getattr(tm.video_note, "duration", None)
+        elif getattr(tm, "sticker", None):
+            media_type = "sticker"
+            attrs = getattr(tm.sticker, "attributes", [])
+            for attr in attrs:
+                alt = getattr(attr, "alt", None)
+                if alt:
+                    sticker_emoji = alt
+                    break
+        elif getattr(tm, "photo", None):
+            media_type = "photo"
+
+        # Reactions
+        reactions: list[tuple[str, int]] = []
+        tm_reactions = getattr(tm, "reactions", None)
+        if tm_reactions and hasattr(tm_reactions, "results"):
+            for r in tm_reactions.results:
+                emoji = getattr(r.reaction, "emoticon", "👍")
+                reactions.append((emoji, r.count))
+
+        fallback_text = tm.message or ""
+        if not fallback_text:
+            if media_type == "voice":
+                fallback_text = "🎙 голосовое сообщение"
+            elif media_type == "video_note":
+                fallback_text = "⭕ видеосообщение"
+            elif media_type == "sticker":
+                fallback_text = f"🎭 стикер {sticker_emoji or ''}"
+            elif media_type == "photo":
+                fallback_text = "🖼 фото"
+            elif getattr(tm, "media", None):
+                fallback_text = "📎 вложение"
+
         msg = Message(
             id=tm.id,
             chat_id=chat_id,
             sender_id=sender_id,
-            text=tm.message or ("🎙 голосовое сообщение" if tm.voice else "🖼 вложение"),
+            text=fallback_text,
             timestamp=timestamp,
             reply_to=tm.reply_to_msg_id if tm.reply_to else None,
-            has_voice=bool(tm.voice),
-            has_photo=bool(tm.photo),
+            has_voice=bool(media_type == "voice"),
+            has_photo=bool(media_type == "photo"),
+            media_type=media_type,
+            duration=duration,
+            sticker_emoji=sticker_emoji,
+            reactions=reactions,
         )
         self._tmsg[(chat_id, tm.id)] = tm
         return msg
@@ -220,6 +274,52 @@ class TelethonBackend(BaseBackend):
         chat.preview = _preview(msg.text)
         return msg
 
+    async def fetch_more_history(
+        self, chat_id: int, offset_id: int = 0, limit: int = 20
+    ) -> list[Message]:
+        entity = self._entities.get(chat_id)
+        if entity is None:
+            return []
+        try:
+            tmsgs = []
+            async for tm in self._client.iter_messages(entity, limit=limit, offset_id=offset_id):
+                tmsgs.append(tm)
+            mapped: list[Message] = []
+            for tm in tmsgs:
+                mapped.append(await self._map_message(tm, chat_id))
+            existing_ids = {m.id for m in self.messages.get(chat_id, [])}
+            new_msgs = [m for m in mapped if m.id not in existing_ids]
+            if new_msgs:
+                # Prepend older messages to the beginning of the list
+                self.messages[chat_id] = list(reversed(new_msgs)) + self.messages.get(chat_id, [])
+            return new_msgs
+        except Exception:
+            return []
+
+    async def add_reaction(self, chat_id: int, message_id: int, emoji: str) -> None:
+        entity = self._entities.get(chat_id)
+        if entity is None:
+            return
+        try:
+            from telethon.tl.functions.messages import SendReactionRequest
+            from telethon.tl.types import ReactionEmoji
+
+            await self._client(
+                SendReactionRequest(
+                    peer=entity,
+                    msg_id=message_id,
+                    reaction=[ReactionEmoji(emoticon=emoji)],
+                )
+            )
+            # Update cached message reaction
+            msg = self.get_message(chat_id, message_id)
+            if msg:
+                curr = dict(msg.reactions)
+                curr[emoji] = curr.get(emoji, 0) + 1
+                msg.reactions = list(curr.items())
+        except Exception:
+            pass
+
     # -- media ---------------------------------------------------------------
 
     async def _download(self, message: Message, attr: str) -> Path | None:
@@ -230,7 +330,10 @@ class TelethonBackend(BaseBackend):
         return Path(result) if result else None
 
     async def fetch_voice(self, message: Message) -> Path | None:
-        return await self._download(message, "voice")
+        res = await self._download(message, "voice")
+        if res is None:
+            res = await self._download(message, "video_note")
+        return res
 
     async def fetch_photo(self, message: Message) -> Path | None:
         return await self._download(message, "photo")

@@ -14,6 +14,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", help="путь к config.toml (по умолчанию ./config.toml или ~/.config/telegram-tui/config.toml)")
     parser.add_argument("--mode", choices=("mock", "live"), help="переопределить режим из конфига")
     parser.add_argument("--no-traffic", action="store_true", help="mock-режим без фонового входящего трафика")
+    parser.add_argument("--welcome", action="store_true", help="показать экран приветствия и выбора режима")
     parser.add_argument("--print-config", action="store_true", help="показать пример конфигурации и выйти")
     return parser
 
@@ -42,9 +43,21 @@ def main(argv: list[str] | None = None) -> int:
     else:
         engine = MockEngine()
 
+    from pathlib import Path
     from .app import TelegramTUI
 
-    app = TelegramTUI(engine=engine, live_traffic=not args.no_traffic, config=config)
+    show_welcome = args.welcome
+    if not args.mode and not args.config:
+        has_cfg = Path("config.toml").exists() or (Path.home() / ".config" / "telegram-tui" / "config.toml").exists()
+        if not has_cfg and not config.api_id:
+            show_welcome = True
+
+    app = TelegramTUI(
+        engine=engine,
+        live_traffic=not args.no_traffic,
+        config=config,
+        show_welcome=show_welcome,
+    )
     app.run()
     return 0
 

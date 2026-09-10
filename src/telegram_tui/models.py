@@ -32,14 +32,20 @@ class Chat(BaseModel):
     unread: int = 0
     preview: str = ""
     last_activity: dt.datetime = Field(default_factory=utcnow)
+    members_count: str = ""
+    is_read_only: bool = False
 
 
 class Message(BaseModel):
     id: int
     chat_id: int
     sender_id: int
-    text: str
+    text: str = ""
     timestamp: dt.datetime = Field(default_factory=utcnow)
     reply_to: int | None = None
     has_voice: bool = False
     has_photo: bool = False
+    media_type: str = "text"  # "text" | "photo" | "voice" | "video_note" | "sticker" | "document"
+    duration: int | None = None  # длительность для аудио/видео
+    sticker_emoji: str | None = None
+    reactions: list[tuple[str, int]] = Field(default_factory=list)
