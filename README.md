@@ -4,7 +4,7 @@
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 163 Passed](https://img.shields.io/badge/tests-163%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 175 Passed](https://img.shields.io/badge/tests-175%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -20,6 +20,8 @@ Features a high-contrast three-panel interface, native terminal media rendering 
   - **Voice Messages**: Rendered with dynamic Unicode audio waveforms (` ▂▃▅▆▇`) and direct background playback via `mpv` (hotkey `v`).
   - **Video Notes (Circles)**: One-key popout to floating PIP window via `mpv` (hotkey `o` or `v`).
   - **Stickers & Reactions**: Rendered with emoji fallbacks (`🎭 sticker: [emoji]`) and quick numeric reactions (`1`–`5`: 👍, ❤️, 🔥, 🎉, 🤔).
+  - **Every Other Attachment**: Videos, GIFs, music and documents are named, sized and timed inline — `report.pdf · 2.1 MB`, `🎬 Video · 0:45 · 12.4 MB` — and open in an external viewer with `o`.
+  - **Sending Files**: `Ctrl+R` opens a picker with Tab-completing path entry and a directory tree; the composer's text rides along as the caption, and files can be sent uncompressed.
 - **Three-Panel Layout**:
   - **Sidebar**: Search filtering (`/` or `Ctrl+F`), pinned chats (`Ctrl+P`), unread badge counters, and chat type badges (Private, Group, Channel).
   - **Chat Feed**: Markdown and fenced code syntax highlighting, reply chains (`↱`), pagination banner for older messages (`Ctrl+O`), and read-only channel protection.
@@ -156,6 +158,7 @@ Telegram TUI is built for speed and fully navigable without a mouse.
 | `r` | Quote-reply to selected message |
 | `v` | Play voice note or open video note in `mpv` |
 | `s` | Stop background audio playback |
+| `z` | Expand / collapse an inline photo |
 | `o` | Open photo/video in external viewer or `mpv` PIP |
 | `1` – `5` | Add quick reaction (👍, ❤️, 🔥, 🎉, 🤔) |
 | `Ctrl+O` | Load older message history from server |
@@ -168,6 +171,7 @@ Telegram TUI is built for speed and fully navigable without a mouse.
 |---|---|
 | `Enter` | Send message |
 | `Alt+Enter` | Insert newline (multiline text) |
+| `Ctrl+R` | Attach a file (the typed text becomes its caption) |
 | `Ctrl+G` | Expand / collapse input box height |
 | `Esc` | Cancel current reply quote |
 
@@ -188,11 +192,13 @@ telegram-tui/
 │   └── widgets/
 │       ├── chat_list.py       # Sidebar chat items with badges & search
 │       ├── chat_view.py       # Message bubbles, waveforms, syntax highlighting
+│       ├── attach.py          # File picker: path completion + directory tree
 │       ├── composer.py        # Multiline composer with reply bar
 │       └── photo.py           # Inline ASCII/Sixel/Kitty image renderer
 ├── tests/
 │   ├── conftest.py            # Isolates HOME and blocks network for every test
 │   ├── test_adversarial.py    # Adversarial & stress tests, incl. live-mode mapping
+│   ├── test_attach.py         # File picker & upload tests
 │   ├── test_auth.py           # Full auth modal lifecycle & 2FA tests
 │   ├── test_cli.py            # Entry point: config errors & --mode overrides
 │   ├── test_config.py         # Config priority, parsing & persistence tests
@@ -218,7 +224,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**163 tests** passing across all subsystems:
+**175 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

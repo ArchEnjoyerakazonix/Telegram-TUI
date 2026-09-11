@@ -428,6 +428,31 @@ class TelethonBackend(BaseBackend):
         chat.preview = _preview(msg)
         return msg
 
+    async def send_file(
+        self,
+        chat_id: int,
+        path: Path,
+        caption: str = "",
+        force_document: bool = False,
+        reply_to: int | None = None,
+        progress=None,
+    ) -> Message:
+        entity = self._entities[chat_id]
+        tm = await self._client.send_file(
+            entity,
+            str(path),
+            caption=caption or None,
+            force_document=force_document,
+            reply_to=reply_to,
+            progress_callback=progress,
+        )
+        msg = await self._map_message(tm, chat_id)
+        self.messages.setdefault(chat_id, []).append(msg)
+        chat = self.chats[chat_id]
+        chat.last_activity = msg.timestamp
+        chat.preview = _preview(msg)
+        return msg
+
     async def fetch_more_history(
         self, chat_id: int, offset_id: int = 0, limit: int = 20
     ) -> list[Message]:

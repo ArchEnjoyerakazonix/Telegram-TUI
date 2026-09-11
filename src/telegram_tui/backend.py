@@ -73,6 +73,22 @@ class BaseBackend(ABC):
     def send(self, chat_id: int, text: str, reply_to: int | None = None):
         """Send a message; returns Message (mock: sync, live: coroutine)."""
 
+    def send_file(
+        self,
+        chat_id: int,
+        path: Path,
+        caption: str = "",
+        force_document: bool = False,
+        reply_to: int | None = None,
+        progress=None,
+    ):
+        """Upload a file to the chat; returns Message (mock: sync, live: coroutine).
+
+        ``force_document`` sends the file as-is instead of letting Telegram
+        recompress it into a photo or video.
+        """
+        raise NotImplementedError
+
     # -- media & interactions ------------------------------------------------
     async def fetch_more_history(self, chat_id: int, offset_id: int, limit: int = 30) -> list[Message]:
         """Fetch older messages preceding offset_id."""

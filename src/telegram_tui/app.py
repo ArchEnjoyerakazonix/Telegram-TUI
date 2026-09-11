@@ -17,6 +17,7 @@ from .config import Config
 from .engine import MockEngine
 from .media import VoicePlayer
 from .models import Chat, Message
+from .widgets.attach import AttachScreen
 from .widgets.chat_list import ChatItem, ChatList
 from .widgets.chat_view import ChatView
 from .widgets.composer import Composer
@@ -100,6 +101,7 @@ class TelegramTUI(App[None]):
         Binding("escape", "back_to_list", "Back to chats", priority=True),
         # Shown by the feed itself, where the selection it acts on lives.
         Binding("o", "open_media", "Open media", priority=False, show=False),
+        Binding("ctrl+r", "attach_file", "Attach", priority=True),
         Binding("ctrl+p", "toggle_pin", "Pin chat", priority=True),
         Binding("ctrl+m", "mark_read", "Mark read", priority=True, show=False),
         Binding("ctrl+u", "force_incoming", "Simulate msg", priority=True, show=False),
@@ -453,6 +455,63 @@ class TelegramTUI(App[None]):
             f"↱ {self.engine.sender_name(message.sender_id)}: {first[:48]}"
         )
         composer.focus()
+
+    # -- attachments -----------------------------------------------------------
+
+    def action_attach_file(self) -> None:
+        self.run_worker(self.attach_file())
+
+    async def attach_file(self) -> None:
+        """Pick a file and send it, using whatever is typed as the caption."""
+        if self.current_chat_id is None:
+            return
+        chat = self.engine.chats.get(self.current_chat_id)
+        if chat is not None and getattr(chat, "is_read_only", False):
+            self.notify("This channel is read-only", severity="warning")
+            return
+
+        chosen = await self.push_screen_wait(AttachScreen())
+        if not chosen:
+            return
+        path, as_document = chosen
+
+        composer = self.query_one(Composer)
+        caption = composer.text.strip()
+        reply_to = None
+        if self.pending_reply and self.pending_reply[0] == self.current_chat_id:
+            reply_to = self.pending_reply[1]
+
+        try:
+            result = self.engine.send_file(
+                self.current_chat_id,
+                path,
+                caption=caption,
+                force_document=as_document,
+                reply_to=reply_to,
+                progress=self._upload_progress(path.name),
+            )
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:  # noqa: BLE001
+            self.notify(f"Failed to send {path.name}: {exc}", severity="error", timeout=8)
+            return
+        finally:
+            self._clear_typing()
+
+        composer.load_text("")
+        self.clear_pending_reply()
+        self.query_one(ChatView).append_message(result)
+        self.refresh_chat_list()
+        self.notify(f"📎 Sent {path.name}")
+
+    def _upload_progress(self, name: str):
+        """Telethon progress callback that reports into the header subtitle."""
+
+        def report(sent: int, total: int) -> None:
+            if total:
+                self.sub_title = f"⬆ {name} — {sent * 100 // total}%"
+
+        return report
 
     # -- reactions -------------------------------------------------------------
 

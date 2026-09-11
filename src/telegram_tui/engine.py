@@ -8,6 +8,7 @@ to messages sent by the user. No real Telegram connection required.
 from __future__ import annotations
 
 import datetime as dt
+import mimetypes
 import random
 import tempfile
 from collections.abc import Callable
@@ -59,6 +60,24 @@ INCOMING_TEXTS = [
     "Don't forget the schema migration this Friday.",
     "Submitted the PR, reviews are welcome.",
 ]
+
+
+#: Extension groups used to guess what an uploaded file should be sent as.
+_EXT_MEDIA = {
+    "photo": {".png", ".jpg", ".jpeg", ".webp", ".bmp"},
+    "gif": {".gif"},
+    "video": {".mp4", ".mkv", ".webm", ".mov", ".avi"},
+    "audio": {".mp3", ".flac", ".ogg", ".m4a", ".wav"},
+}
+
+
+def _guess_media_type(path: Path) -> str:
+    """What Telegram would turn this file into if not forced to a document."""
+    suffix = path.suffix.lower()
+    for media_type, extensions in _EXT_MEDIA.items():
+        if suffix in extensions:
+            return media_type
+    return "document"
 
 
 def _one_line(text: str) -> str:
@@ -284,6 +303,37 @@ class MockEngine(BaseBackend):
 
     def send(self, chat_id: int, text: str, reply_to: int | None = None) -> Message:
         msg = self._msg(chat_id, self.me.id, text, reply_to=reply_to)
+        return msg
+
+    def send_file(
+        self,
+        chat_id: int,
+        path: Path,
+        caption: str = "",
+        force_document: bool = False,
+        reply_to: int | None = None,
+        progress=None,
+    ) -> Message:
+        """Offline equivalent: record the upload as a message with real metadata."""
+        path = Path(path)
+        size = path.stat().st_size if path.exists() else None
+        media_type = "document" if force_document else _guess_media_type(path)
+        msg = self._msg(
+            chat_id,
+            self.me.id,
+            caption,
+            reply_to=reply_to,
+            media_type=media_type,
+            has_photo=media_type == "photo",
+            has_voice=media_type in ("voice", "audio"),
+        )
+        msg.file_name = path.name
+        msg.file_size = size
+        msg.mime_type = mimetypes.guess_type(path.name)[0]
+        chat = self.chats[chat_id]
+        chat.preview = _one_line(caption) if caption else msg.media_summary()
+        if progress is not None and size:
+            progress(size, size)
         return msg
 
     async def start(self) -> bool:
