@@ -1075,3 +1075,57 @@ async def test_long_document_names_are_elided(make_backend):
     assert summary.startswith(long_name[:10])
     assert "…" in summary
     assert len(summary.split(" · ")[0]) <= MAX_FILE_NAME
+
+
+@pytest.mark.asyncio
+async def test_thumbnail_asks_telegram_for_the_poster_frame(make_backend):
+    """A video cannot play in the feed, so we draw the frame Telegram stored."""
+    backend = make_backend()
+    captured = {}
+    tm = MagicMock()
+
+    async def download_media(file, thumb=None, progress_callback=None):
+        captured["thumb"] = thumb
+        Path(file).write_bytes(b"jpeg")
+        return file
+
+    tm.download_media = download_media
+    backend._tmsg[(1, 2)] = tm
+    msg = Message(id=2, chat_id=1, media_type="video")
+
+    first = await backend.fetch_thumbnail(msg)
+
+    assert first is not None and first.name.endswith("_thumb.jpg")
+    assert captured["thumb"] == -1, "ask for the largest stored thumbnail"
+
+
+@pytest.mark.asyncio
+async def test_thumbnail_is_cached_like_any_other_download(make_backend):
+    backend = make_backend()
+    counter = _Concurrency()
+    tm = MagicMock()
+
+    async def download_media(file, thumb=None, progress_callback=None):
+        counter.start()
+        Path(file).write_bytes(b"jpeg")
+        counter.stop()
+        return file
+
+    tm.download_media = download_media
+    backend._tmsg[(1, 2)] = tm
+    msg = Message(id=2, chat_id=1, media_type="gif")
+
+    await backend.fetch_thumbnail(msg)
+    await backend.fetch_thumbnail(msg)
+
+    assert counter.total == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_thumbnail_is_not_an_error(make_backend):
+    backend = make_backend()
+    tm = MagicMock()
+    tm.download_media = AsyncMock(side_effect=RuntimeError("no thumbnail stored"))
+    backend._tmsg[(1, 2)] = tm
+
+    assert await backend.fetch_thumbnail(Message(id=2, chat_id=1, media_type="video")) is None

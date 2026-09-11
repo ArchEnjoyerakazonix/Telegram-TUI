@@ -368,6 +368,14 @@ class MockEngine(BaseBackend):
             write_mock_photo(path)
         return path
 
+    async def fetch_thumbnail(self, message: Message) -> Path | None:
+        if message.media_type not in ("video", "gif", "video_note"):
+            return None
+        path = self._media_dir / f"thumb-{message.id}.png"
+        if not path.exists():
+            write_mock_photo(path, 320, 180)
+        return path
+
     def plan_auto_reply(self, chat_id: int) -> PlannedReply | None:
         """Decide whether an interlocutor will reply to the user's last message."""
         history = self.messages.get(chat_id, [])

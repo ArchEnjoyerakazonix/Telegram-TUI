@@ -30,6 +30,43 @@ def _time_label(ts: dt.datetime) -> str:
     return local.strftime("%d.%m")
 
 
+def _signature(chat: Chat) -> tuple:
+    """Everything a row actually shows, so unchanged rows can be left alone."""
+    return (
+        chat.title,
+        chat.pinned,
+        chat.unread,
+        chat.preview,
+        chat.chat_type,
+        _time_label(chat.last_activity),
+    )
+
+
+def _top_row(chat: Chat) -> Table:
+    type_icon = _TYPE_ICON.get(chat.chat_type, "")
+    icon_str = f"{type_icon} " if type_icon else ""
+    pin_str = f"{_PIN} " if chat.pinned else ""
+    title = Text(
+        f"{pin_str}{icon_str}{chat.title}".strip(),
+        style="bold #e0af68" if chat.pinned else "bold #f0f0f0",
+    )
+    grid = Table.grid(expand=True, padding=0)
+    grid.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+    grid.add_column(justify="right")
+    grid.add_row(title, Text(_time_label(chat.last_activity), style="#7aa2f7"))
+    return grid
+
+
+def _bottom_row(chat: Chat) -> Table:
+    badge = Text(f" {chat.unread} ", style=_BADGE_STYLES) if chat.unread else Text("")
+    preview = Text(chat.preview or "…", style="#9aa5ce")
+    grid = Table.grid(expand=True, padding=0)
+    grid.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+    grid.add_column(justify="right")
+    grid.add_row(preview, badge)
+    return grid
+
+
 class ChatItem(ListItem):
     """One row of the chat list: pin, title, time, preview and unread badge."""
 
@@ -59,34 +96,24 @@ class ChatItem(ListItem):
     def __init__(self, chat: Chat) -> None:
         super().__init__(name=chat.title)
         self.chat_id = chat.id
-
-        unread = chat.unread
-        badge = Text(f" {unread} ", style=_BADGE_STYLES) if unread else Text("")
-
-        type_icon = _TYPE_ICON.get(chat.chat_type, "")
-        icon_str = f"{type_icon} " if type_icon else ""
-        pin_str = f"{_PIN} " if chat.pinned else ""
-        title = Text(f"{pin_str}{icon_str}{chat.title}".strip(), style="bold #e0af68" if chat.pinned else "bold #f0f0f0")
-
-        top = Table.grid(expand=True, padding=0)
-        top.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
-        top.add_column(justify="right")
-        top.add_row(title, Text(_time_label(chat.last_activity), style="#7aa2f7"))
-
-        preview_text = chat.preview or "…"
-        preview = Text(preview_text, style="#9aa5ce")
-        bottom = Table.grid(expand=True, padding=0)
-        bottom.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
-        bottom.add_column(justify="right")
-        bottom.add_row(preview, badge)
-
-        self._top = top
-        self._bottom = bottom
+        self._signature = _signature(chat)
+        self._top = Static(_top_row(chat), classes="chat-line")
+        self._bottom = Static(_bottom_row(chat), classes="chat-line chat-line-dim")
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static(self._top, classes="chat-line")
-            yield Static(self._bottom, classes="chat-line chat-line-dim")
+            yield self._top
+            yield self._bottom
+
+    def update_chat(self, chat: Chat) -> bool:
+        """Redraw in place, and only when something visible actually changed."""
+        signature = _signature(chat)
+        if signature == self._signature:
+            return False
+        self._signature = signature
+        self._top.update(_top_row(chat))
+        self._bottom.update(_bottom_row(chat))
+        return True
 
 
 class ChatList(ListView):
@@ -108,6 +135,24 @@ class ChatList(ListView):
 
     def action_search(self) -> None:
         self.app.query_one("#search").focus()
+
+    def sync(self, chats: list[Chat]) -> bool:
+        """Update the existing rows in place.
+
+        Returns False when the rows no longer match the chats — a different set
+        or a different order — and the caller has to rebuild the list. Rebuilding
+        clears the ListView first, so doing it on every incoming message left the
+        sidebar blank most of the time in a busy chat.
+        """
+        items = list(self.query(ChatItem))
+        if len(items) != len(chats):
+            return False
+        for item, chat in zip(items, chats):
+            if item.chat_id != chat.id:
+                return False
+        for item, chat in zip(items, chats):
+            item.update_chat(chat)
+        return True
 
     def item_by_chat(self, chat_id: int) -> ChatItem | None:
         for item in self.query(ChatItem):

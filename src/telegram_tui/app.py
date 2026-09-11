@@ -234,9 +234,17 @@ class TelegramTUI(App[None]):
 
     def refresh_chat_list(self) -> None:
         chat_list = self.query_one(ChatList)
+        chats = self.engine.sorted_chats(self._search_query)
+        # Updating rows in place keeps a busy chat from rebuilding the whole
+        # sidebar — and blanking it — on every message that arrives.
+        if chat_list.sync(chats):
+            if chat_list.index is None:
+                # Rows were reused, so nothing moved the cursor onto one yet.
+                self._restore_highlight(chat_list, self.current_chat_id)
+            return
         keep_id = chat_list.highlighted_chat_id() or self.current_chat_id
         chat_list.clear()
-        for chat in self.engine.sorted_chats(self._search_query):
+        for chat in chats:
             chat_list.mount(ChatItem(chat))
         self._restore_highlight(chat_list, keep_id)
 

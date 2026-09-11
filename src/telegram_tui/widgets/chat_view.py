@@ -17,7 +17,7 @@ from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
 
-from ..models import MEDIA_LABELS, Chat, Message
+from ..models import Chat, Message
 from .photo import PhotoWidget
 
 _FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
@@ -26,6 +26,8 @@ _FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
 _SUMMARISED_MEDIA = frozenset(
     {"video", "gif", "audio", "document", "contact", "geo", "poll"}
 )
+#: Media Telegram stores a poster frame for, which we can draw in the feed.
+_THUMBNAILED_MEDIA = frozenset({"video", "gif", "video_note"})
 #: ... and the subset an external viewer can actually open.
 _OPENABLE_MEDIA = frozenset({"video", "gif", "audio", "document"})
 
@@ -177,11 +179,11 @@ class MessageWidget(Vertical):
             yield Static(f"🎭 [bold #bb9af7]sticker:[/] {emoji}", classes="msg-sticker", markup=True)
 
         elif self.message.media_type in _SUMMARISED_MEDIA:
+            # media_summary() already leads with the icon for this media type.
             summary = escape(self.message.media_summary())
-            hint = "o: open" if self.message.media_type in _OPENABLE_MEDIA else ""
-            icon = MEDIA_LABELS.get(self.message.media_type, "📎 File").split()[0]
+            hint = "  [dim]o: open[/]" if self.message.media_type in _OPENABLE_MEDIA else ""
             yield Static(
-                f"{icon} [bold #7aa2f7]{summary}[/]" + (f"  [dim]{hint}[/]" if hint else ""),
+                f"[bold #7aa2f7]{summary}[/]{hint}",
                 classes="msg-file",
                 markup=True,
             )
@@ -192,8 +194,10 @@ class MessageWidget(Vertical):
             else:
                 yield Static(Text(part["text"]), markup=False)
 
-        if self.message.has_photo:
+        if self.message.has_photo or self.message.media_type == "photo":
             yield PhotoWidget(self.message, self.app.engine)
+        elif self.message.media_type in _THUMBNAILED_MEDIA:
+            yield PhotoWidget(self.message, self.app.engine, thumbnail=True)
 
         # Always mounted, hidden while empty, so a reaction added later can be
         # rendered in place instead of rebuilding the whole message.

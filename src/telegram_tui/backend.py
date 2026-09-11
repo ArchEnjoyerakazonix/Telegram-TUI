@@ -111,3 +111,7 @@ class BaseBackend(ABC):
 
     async def fetch_photo(self, message: Message) -> Path | None:
         return None
+
+    async def fetch_thumbnail(self, message: Message) -> Path | None:
+        """A still frame for media that cannot be shown inline, like a video."""
+        return None

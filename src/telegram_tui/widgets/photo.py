@@ -30,10 +30,12 @@ class PhotoWidget(Static):
     }
     """
 
-    def __init__(self, message: Message, backend) -> None:  # noqa: ANN001
-        super().__init__("🖼 photo — loading…", markup=False)
+    def __init__(self, message: Message, backend, thumbnail: bool = False) -> None:  # noqa: ANN001
+        super().__init__("…", markup=False)
         self._message = message
         self._backend = backend
+        #: A video or GIF cannot play in the feed, so show its poster frame.
+        self._thumbnail = thumbnail
         self._path: Path | None = None
         self.expanded = False
 
@@ -62,17 +64,24 @@ class PhotoWidget(Static):
         return min(cols, max(20, available_cols)), min(rows, max(6, available_rows))
 
     def _caption(self) -> str:
+        if self._thumbnail:
+            return ""
         size = format_size(self._message.file_size)
         return f"🖼 photo{f' · {size}' if size else ''}"
 
     async def _load(self) -> None:
         if self._path is None:
+            fetch = (
+                self._backend.fetch_thumbnail if self._thumbnail else self._backend.fetch_photo
+            )
             try:
-                self._path = await self._backend.fetch_photo(self._message)
+                self._path = await fetch(self._message)
             except Exception as exc:  # noqa: BLE001
                 self.update(f"{self._caption()} — unavailable ({exc})")
                 return
         if self._path is None:
+            # No poster frame stored; the summary row already says what this is.
+            self.display = not self._thumbnail
             self.update(self._caption())
             return
 

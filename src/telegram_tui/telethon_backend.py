@@ -551,6 +551,25 @@ class TelethonBackend(BaseBackend):
     async def fetch_photo(self, message: Message) -> Path | None:
         return await self._download(message, "photo")
 
+    async def fetch_thumbnail(self, message: Message) -> Path | None:
+        """Download just the poster frame Telegram stores with a video or GIF."""
+        tm = self._tmsg.get((message.chat_id, message.id))
+        if tm is None:
+            return None
+        target = self._media_dir / f"{message.chat_id}_{message.id}_thumb.jpg"
+        if target.exists() and target.stat().st_size > 0:
+            return target
+        async with self._downloads:
+            if target.exists() and target.stat().st_size > 0:
+                return target
+            try:
+                # thumb=-1 asks for the largest thumbnail Telegram kept.
+                result = await tm.download_media(file=str(target), thumb=-1)
+            except Exception:
+                _log.debug("No thumbnail for message %s", message.id, exc_info=True)
+                return None
+            return Path(result) if result else None
+
 
 def _display_name(entity) -> str:
     first = getattr(entity, "first_name", None)

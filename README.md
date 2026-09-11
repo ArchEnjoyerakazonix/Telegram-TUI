@@ -4,7 +4,7 @@
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 186 Passed](https://img.shields.io/badge/tests-186%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 196 Passed](https://img.shields.io/badge/tests-196%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -20,7 +20,7 @@ Features a high-contrast three-panel interface, native terminal media rendering 
   - **Voice Messages**: Rendered with dynamic Unicode audio waveforms (` ▂▃▅▆▇`) and direct background playback via `mpv` (hotkey `v`).
   - **Video Notes (Circles)**: One-key popout to floating PIP window via `mpv` (hotkey `o` or `v`).
   - **Stickers & Reactions**: Rendered with emoji fallbacks (`🎭 sticker: [emoji]`) and quick numeric reactions (`1`–`5`: 👍, ❤️, 🔥, 🎉, 🤔).
-  - **Every Other Attachment**: Videos, GIFs, music and documents are named, sized and timed inline — `report.pdf · 2.1 MB`, `🎬 Video · 0:45 · 12.4 MB` — and open in an external viewer with `o`.
+  - **Every Other Attachment**: Videos and GIFs show the poster frame Telegram stores; music and documents are named, sized and timed inline — `report.pdf · 2.1 MB`, `🎬 Video · 0:45 · 12.4 MB` — and open in an external viewer with `o`.
   - **Sending Files**: `Ctrl+R` opens a picker with Tab-completing path entry and a directory tree; the composer's text rides along as the caption, and files can be sent uncompressed.
 - **Three-Panel Layout**:
   - **Sidebar**: Search filtering (`/` or `Ctrl+F`), pinned chats (`Ctrl+P`), unread badge counters, and chat type badges (Private, Group, Channel).
@@ -224,7 +224,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**186 tests** passing across all subsystems:
+**196 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

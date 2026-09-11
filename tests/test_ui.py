@@ -551,3 +551,89 @@ async def test_z_expands_and_collapses_a_photo(app):
     await pilot.pause()
     assert photo.expanded is False
     assert photo._preview_box()[1] == compact_rows
+
+
+# -- sidebar refresh cost ---------------------------------------------------
+
+
+async def test_sidebar_updates_rows_in_place(app):
+    """Rebuilding the list clears it first, so a busy chat blanked the sidebar."""
+    app, pilot = app
+    chat_list = app.query_one(ChatList)
+    before = list(chat_list.query(ChatItem))
+    chat_id = app.current_chat_id
+
+    app.engine.chats[chat_id].unread = 7
+    app.refresh_chat_list()
+    await pilot.pause()
+
+    after = list(chat_list.query(ChatItem))
+    assert [id(w) for w in before] == [id(w) for w in after], "rows must be reused"
+    row = next(w for w in after if w.chat_id == chat_id)
+    assert row._signature[2] == 7, "the badge still has to update"
+
+
+async def test_sidebar_rebuilds_when_the_order_changes(app):
+    app, pilot = app
+    chat_list = app.query_one(ChatList)
+    before = [w.chat_id for w in chat_list.query(ChatItem)]
+
+    # Filtering changes which chats are listed, so reuse is impossible.
+    app._search_query = "mom"
+    app.refresh_chat_list()
+    await pilot.pause()
+
+    after = [w.chat_id for w in chat_list.query(ChatItem)]
+    assert after != before
+    assert len(after) == 1
+
+
+async def test_unchanged_rows_are_not_redrawn(app):
+    app, pilot = app
+    row = app.query_one(ChatList).query(ChatItem).first()
+    chat = app.engine.chats[row.chat_id]
+
+    assert row.update_chat(chat) is False, "nothing changed, nothing to redraw"
+    chat.unread += 1
+    assert row.update_chat(chat) is True
+
+
+# -- poster frames for video and GIF ----------------------------------------
+
+
+@pytest.mark.parametrize("media_type", ["video", "gif", "video_note"])
+async def test_video_like_media_shows_a_poster_frame(media_type):
+    """"GIF doesn't render anything" — it needs the still frame Telegram keeps."""
+    engine = MockEngine(seed=5)
+    chat_id = next(iter(engine.chats))
+    engine._msg(chat_id, engine.members[chat_id][0], "", media_type=media_type, duration=11)
+
+    app = TelegramTUI(engine=engine, live_traffic=False)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.open_chat(chat_id, force=True)
+        for _ in range(8):
+            await pilot.pause(0.05)
+
+        frames = [w for w in app.query(PhotoWidget) if w._thumbnail]
+        assert frames, f"{media_type} should show a poster frame"
+        assert frames[-1]._path is not None
+        assert frames[-1].size.height > 1
+
+
+async def test_a_frameless_video_hides_the_widget_rather_than_apologising():
+    engine = MockEngine(seed=5)
+    chat_id = next(iter(engine.chats))
+    engine._msg(chat_id, engine.members[chat_id][0], "", media_type="video", duration=5)
+
+    async def no_thumbnail(message):
+        return None
+
+    engine.fetch_thumbnail = no_thumbnail
+    app = TelegramTUI(engine=engine, live_traffic=False)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.open_chat(chat_id, force=True)
+        for _ in range(8):
+            await pilot.pause(0.05)
+
+        frames = [w for w in app.query(PhotoWidget) if w._thumbnail]
+        assert frames and frames[-1].display is False
