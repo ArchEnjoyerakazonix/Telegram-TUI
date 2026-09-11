@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 from .backend import BaseBackend
-from .models import Chat, ChatType, Message, media_label, utcnow
+from .models import Chat, ChatType, Message, utcnow
 
 DIALOG_LIMIT = 50
 MESSAGES_PER_DIALOG = 30
@@ -22,6 +22,10 @@ MESSAGES_PER_DIALOG = 30
 #: only needed to re-download attachments, so the oldest are dropped first
 #: rather than letting a long-running session grow without bound.
 TMSG_CACHE_LIMIT = 2000
+
+#: Attachments downloaded at the same time. Telegram rate-limits hard, and a
+#: chat full of photos would otherwise start fifty transfers at once.
+DOWNLOAD_CONCURRENCY = 3
 
 _log = logging.getLogger(__name__)
 
@@ -66,12 +70,49 @@ def _members_label(entity, chat_type: ChatType) -> str:
     return f"{count:,} {noun}" if count == 1 else f"{count:,} {noun}s"
 
 
-def _preview(text: str) -> str:
-    for line in (text or "").splitlines():
+#: Checked in order; the first Telethon property that is set wins.
+_MEDIA_PROPS = (
+    "voice",
+    "video_note",
+    "sticker",
+    "gif",
+    "video",
+    "audio",
+    "photo",
+    "contact",
+    "geo",
+    "poll",
+    "document",
+)
+
+
+def _as_str(value) -> str | None:
+    """Accept a value from Telethon only if it really is a non-empty string."""
+    return value if isinstance(value, str) and value else None
+
+
+def _as_int(value) -> int | None:
+    """Accept a value from Telethon only if it really is an int."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _media_type(tm) -> str:
+    """Map a Telethon message onto one of our media_type slugs."""
+    for prop in _MEDIA_PROPS:
+        if getattr(tm, prop, None) is not None:
+            return prop
+    return "text"
+
+
+def _preview(message: Message) -> str:
+    """Chat list preview: first non-empty line, else what the attachment is."""
+    for line in (message.text or "").splitlines():
         stripped = line.strip()
         if stripped:
             return stripped
-    return "…"
+    return message.media_summary() or "…"
 
 
 class TelethonBackend(BaseBackend):
@@ -95,6 +136,7 @@ class TelethonBackend(BaseBackend):
         self._entities: dict[int, object] = {}
         self._media_dir = Path(tempfile.gettempdir()) / "telegram-tui-media"
         self._media_dir.mkdir(exist_ok=True)
+        self._downloads = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
         self._ready: dict[int, bool] = {}
         self._pin_overrides: dict[int, bool] = {}
 
@@ -200,7 +242,7 @@ class TelethonBackend(BaseBackend):
                 self.messages[chat_id] = mapped
                 chat = self.chats.get(chat_id)
                 if chat and mapped:
-                    chat.preview = _preview(mapped[-1].text)
+                    chat.preview = _preview(mapped[-1])
                     chat.last_activity = mapped[-1].timestamp
             except Exception:
                 _log.warning("History fetch failed for chat %s", chat_id, exc_info=True)
@@ -233,26 +275,29 @@ class TelethonBackend(BaseBackend):
                 self.users[sender_id] = str(sender_id)
         timestamp: dt.datetime = tm.date or utcnow()
 
-        media_type = "text"
+        media_type = _media_type(tm)
         sticker_emoji = None
-        duration = None
-
-        if getattr(tm, "voice", None):
-            media_type = "voice"
-            duration = getattr(tm.voice, "duration", None)
-        elif getattr(tm, "video_note", None):
-            media_type = "video_note"
-            duration = getattr(tm.video_note, "duration", None)
-        elif getattr(tm, "sticker", None):
-            media_type = "sticker"
-            attrs = getattr(tm.sticker, "attributes", [])
-            for attr in attrs:
+        if media_type == "sticker":
+            for attr in getattr(tm.sticker, "attributes", []):
                 alt = getattr(attr, "alt", None)
                 if alt:
                     sticker_emoji = alt
                     break
-        elif getattr(tm, "photo", None):
-            media_type = "photo"
+
+        # tm.file carries name/size/mime/duration for every document-backed type.
+        file_name = file_size = mime_type = duration = None
+        tm_file = getattr(tm, "file", None)
+        if tm_file is not None:
+            file_size = _as_int(getattr(tm_file, "size", None))
+            mime_type = _as_str(getattr(tm_file, "mime_type", None))
+            duration = _as_int(getattr(tm_file, "duration", None))
+            if media_type in ("document", "video", "audio", "gif"):
+                file_name = _as_str(getattr(tm_file, "name", None))
+            if media_type == "audio" and not file_name:
+                performer = _as_str(getattr(tm_file, "performer", None))
+                title = _as_str(getattr(tm_file, "title", None))
+                if title:
+                    file_name = f"{performer} — {title}" if performer else title
 
         # Reactions
         reactions: list[tuple[str, int]] = []
@@ -265,8 +310,6 @@ class TelethonBackend(BaseBackend):
                 reactions.append((str(emoji), int(count)))
 
         fallback_text = tm.message or ""
-        if not fallback_text and (media_type != "text" or getattr(tm, "media", None)):
-            fallback_text = media_label(media_type, sticker_emoji)
 
         # Waveform for audio/voice
         waveform = None
@@ -292,6 +335,9 @@ class TelethonBackend(BaseBackend):
             sticker_emoji=sticker_emoji,
             reactions=reactions,
             waveform=waveform,
+            file_name=file_name,
+            file_size=file_size,
+            mime_type=mime_type,
         )
         self._remember_raw(chat_id, tm)
         return msg
@@ -320,7 +366,7 @@ class TelethonBackend(BaseBackend):
         self.messages.setdefault(chat_id, []).append(msg)
         chat = self.chats[chat_id]
         chat.last_activity = msg.timestamp
-        chat.preview = _preview(msg.text)
+        chat.preview = _preview(msg)
         if not getattr(event.message, "out", False):
             chat.unread += 1
         if self.on_incoming is not None:
@@ -379,7 +425,7 @@ class TelethonBackend(BaseBackend):
         self.messages.setdefault(chat_id, []).append(msg)
         chat = self.chats[chat_id]
         chat.last_activity = msg.timestamp
-        chat.preview = _preview(msg.text)
+        chat.preview = _preview(msg)
         return msg
 
     async def fetch_more_history(
@@ -430,15 +476,37 @@ class TelethonBackend(BaseBackend):
 
     # -- media ---------------------------------------------------------------
 
-    async def _download(self, message: Message, attr: str) -> Path | None:
+    def _cache_path(self, message: Message, tm) -> Path:
+        """Stable on-disk name so a file is fetched once, not once per view."""
+        ext = _as_str(getattr(getattr(tm, "file", None), "ext", None)) or ""
+        return self._media_dir / f"{message.chat_id}_{message.id}{ext}"
+
+    async def _download(self, message: Message, attr: str | None = None, progress=None) -> Path | None:
         tm = self._tmsg.get((message.chat_id, message.id))
-        if tm is None or getattr(tm, attr, None) is None:
+        if tm is None:
             return None
-        try:
-            result = await tm.download_media(file=str(self._media_dir))
+        if attr is not None and getattr(tm, attr, None) is None:
+            return None
+
+        target = self._cache_path(message, tm)
+        if target.exists() and target.stat().st_size > 0:
+            return target
+
+        # Opening a chat can put dozens of attachments on screen at once; without
+        # a limit they would all hit the network together.
+        async with self._downloads:
+            if target.exists() and target.stat().st_size > 0:
+                return target  # another task fetched it while we waited
+            try:
+                result = await tm.download_media(file=str(target), progress_callback=progress)
+            except Exception:
+                _log.warning("Download failed for message %s", message.id, exc_info=True)
+                return None
             return Path(result) if result else None
-        except Exception:
-            return None
+
+    async def fetch_file(self, message: Message, progress=None) -> Path | None:
+        """Download whatever the message carries, whatever its type."""
+        return await self._download(message, progress=progress)
 
     async def fetch_voice(self, message: Message) -> Path | None:
         res = await self._download(message, "voice")

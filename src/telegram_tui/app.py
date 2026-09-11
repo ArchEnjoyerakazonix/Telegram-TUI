@@ -23,6 +23,9 @@ from .widgets.composer import Composer
 
 TICK_SECONDS = 6.0
 
+#: Media types an external viewer or player can open.
+OPENABLE_MEDIA = frozenset({"video", "video_note", "gif", "audio", "document", "photo"})
+
 
 class BackendIncoming(TextualMessage):
     """Incoming message delivered by a live backend."""
@@ -516,24 +519,36 @@ class TelegramTUI(App[None]):
                 self.notify("Photo unavailable", severity="error")
             return
 
-        if message.media_type in ("video_note", "video", "document"):
-            try:
-                path = await self.engine.fetch_voice(message)
-            except Exception as exc:
-                self.notify(f"Failed to load media: {exc}", severity="error")
-                return
-            if path and path.exists():
-                open_external_media(path)
-                self.notify(f"⭕ Opening {path.name} in video player")
-            else:
-                self.notify("Media file unavailable", severity="error")
-            return
-
         if message.has_voice or message.media_type == "voice":
             await self.play_selected_voice()
             return
 
+        if message.media_type in OPENABLE_MEDIA:
+            label = message.media_summary()
+            try:
+                path = await self.engine.fetch_file(message, progress=self._download_progress(label))
+            except Exception as exc:
+                self.notify(f"Failed to load media: {exc}", severity="error")
+                return
+            finally:
+                self._clear_typing()
+            if path and path.exists():
+                open_external_media(path)
+                self.notify(f"▶ Opening {path.name}")
+            else:
+                self.notify("Media file unavailable", severity="error")
+            return
+
         self.notify("No media files to open on selected message (key: o)", severity="warning")
+
+    def _download_progress(self, label: str):
+        """Telethon progress callback that reports into the header subtitle."""
+
+        def report(received: int, total: int) -> None:
+            if total:
+                self.sub_title = f"⬇ {label} — {received * 100 // total}%"
+
+        return report
 
     def action_open_media(self) -> None:
         self.run_worker(self.open_selected_media())

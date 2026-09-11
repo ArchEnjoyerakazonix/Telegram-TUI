@@ -17,10 +17,17 @@ from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
 
-from ..models import Chat, Message
+from ..models import MEDIA_LABELS, Chat, Message
 from .photo import PhotoWidget
 
 _FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
+
+#: Media that gets a one-line "what is this" row rather than bespoke rendering.
+_SUMMARISED_MEDIA = frozenset(
+    {"video", "gif", "audio", "document", "contact", "geo", "poll"}
+)
+#: ... and the subset an external viewer can actually open.
+_OPENABLE_MEDIA = frozenset({"video", "gif", "audio", "document"})
 
 #: Number keys that post a reaction to the selected message.
 QUICK_REACTIONS = {"1": "👍", "2": "❤️", "3": "🔥", "4": "🎉", "5": "🤔"}
@@ -94,6 +101,7 @@ class MessageWidget(Vertical):
     MessageWidget .msg-voice { color: #ff9e64; text-style: italic; }
     MessageWidget .msg-video { color: #7aa2f7; text-style: italic; }
     MessageWidget .msg-sticker { color: #bb9af7; }
+    MessageWidget .msg-file { color: #7aa2f7; }
     MessageWidget .msg-reactions { margin-top: 1; }
     MessageWidget CodeBlock { margin: 0; }
     .load-older {
@@ -167,6 +175,16 @@ class MessageWidget(Vertical):
         if self.message.media_type == "sticker" or self.message.sticker_emoji:
             emoji = self.message.sticker_emoji or "🎭"
             yield Static(f"🎭 [bold #bb9af7]sticker:[/] {emoji}", classes="msg-sticker", markup=True)
+
+        elif self.message.media_type in _SUMMARISED_MEDIA:
+            summary = escape(self.message.media_summary())
+            hint = "o: open" if self.message.media_type in _OPENABLE_MEDIA else ""
+            icon = MEDIA_LABELS.get(self.message.media_type, "📎 File").split()[0]
+            yield Static(
+                f"{icon} [bold #7aa2f7]{summary}[/]" + (f"  [dim]{hint}[/]" if hint else ""),
+                classes="msg-file",
+                markup=True,
+            )
 
         for part in self._split_text(self.message.text):
             if part["kind"] == "code":
@@ -243,6 +261,7 @@ class ChatView(VerticalScroll):
         Binding("v", "app_voice", "Play voice"),
         Binding("s", "app.stop_voice", "Stop audio", show=False),
         Binding("o", "app_open_media", "Open media"),
+        Binding("z", "toggle_photo", "Zoom photo", show=False),
         Binding("/", "app_find", "Find in chat"),
         Binding("ctrl+o", "load_older", "Load history", priority=True),
         Binding("n", "next_hit", show=False),
@@ -374,6 +393,15 @@ class ChatView(VerticalScroll):
 
     async def action_app_open_media(self) -> None:
         await self.app.open_selected_media()
+
+    def action_toggle_photo(self) -> None:
+        """Expand or collapse the preview on the selected message."""
+        widgets = self._widgets()
+        if not 0 <= self._selected < len(widgets):
+            return
+        photos = widgets[self._selected].query(PhotoWidget)
+        if photos:
+            photos.first().toggle_expanded()
 
     async def action_react(self, emoji: str) -> None:
         await self.app.react_to_selected(emoji)

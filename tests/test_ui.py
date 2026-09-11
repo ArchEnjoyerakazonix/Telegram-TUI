@@ -516,3 +516,35 @@ async def test_photo_preview_shrinks_with_the_terminal():
     async for _feed, photo in _photo_widget((90, 24)):
         small = photo._preview_box()
     assert small[0] < big[0] and small[1] < big[1]
+
+
+async def test_z_expands_and_collapses_a_photo(app):
+    app, pilot = app
+    target = next(
+        cid for cid in app.engine.chats if any(m.has_photo for m in app.engine.history(cid))
+    )
+    app.open_chat(target, force=True)
+    for _ in range(4):
+        await pilot.pause()
+
+    view = app.query_one(ChatView)
+    view.focus()
+    photo = app.query(PhotoWidget).first()
+    index = next(
+        i for i, w in enumerate(view._widgets()) if w.query(PhotoWidget)
+    )
+    view.select(index)
+    await pilot.pause()
+
+    compact_rows = photo._preview_box()[1]
+    assert photo.expanded is False
+
+    await pilot.press("z")
+    await pilot.pause()
+    assert photo.expanded is True
+    assert photo._preview_box()[1] > compact_rows
+
+    await pilot.press("z")
+    await pilot.pause()
+    assert photo.expanded is False
+    assert photo._preview_box()[1] == compact_rows

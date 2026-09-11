@@ -82,6 +82,14 @@ class BaseBackend(ABC):
         """Add a reaction emoji to a message."""
         pass
 
+    async def fetch_file(self, message: Message, progress=None) -> Path | None:
+        """Download the message's attachment, whatever type it is.
+
+        ``progress`` is called with (received_bytes, total_bytes) when the
+        backend can report it.
+        """
+        return None
+
     async def fetch_voice(self, message: Message) -> Path | None:
         return None
 

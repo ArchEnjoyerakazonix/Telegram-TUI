@@ -693,6 +693,10 @@ def _new_message_event(msg_id, *, chat_id=42, sender_id=7, out=False, text="Hell
     event.message.photo = None
     event.message.reactions = None
     event.message.reply_to = None
+    event.message.file = None
+    for prop in ("voice", "video_note", "sticker", "gif", "video", "audio",
+                 "photo", "contact", "geo", "poll", "document"):
+        setattr(event.message, prop, None)
     return event
 
 
@@ -822,3 +826,200 @@ async def test_eager_tasks_break_the_pattern_telethon_relies_on():
 
     await connect({"connected": False})
     assert ran == [1], "default: the sender loop starts once the flag is set"
+
+
+# ============================================================================
+# 10. Media type mapping
+# ============================================================================
+
+_ALL_MEDIA_PROPS = (
+    "voice", "video_note", "sticker", "gif", "video",
+    "audio", "photo", "contact", "geo", "poll", "document",
+)
+
+
+def _media_message(prop=None, *, text="", name=None, size=None, mime=None, duration=None,
+                   performer=None, title=None):
+    """A Telethon message carrying exactly one kind of media."""
+    tm = MagicMock()
+    tm.id, tm.sender_id, tm.message = 5, 7, text
+    tm.date = dt.datetime.now(dt.timezone.utc)
+    tm.reply_to = tm.reactions = None
+    tm.get_sender = AsyncMock(return_value=None)
+    for candidate in _ALL_MEDIA_PROPS:
+        setattr(tm, candidate, None)
+    if prop:
+        setattr(tm, prop, MagicMock())
+    if any(v is not None for v in (name, size, mime, duration, performer, title)):
+        file = MagicMock()
+        file.name, file.size, file.mime_type = name, size, mime
+        file.duration, file.performer, file.title = duration, performer, title
+        tm.file = file
+    else:
+        tm.file = None
+    return tm
+
+
+@pytest.mark.asyncio
+async def test_map_message_recognises_a_document(make_backend):
+    backend = make_backend()
+    tm = _media_message("document", name="report.pdf", size=2201000, mime="application/pdf")
+
+    msg = await backend._map_message(tm, 1)
+
+    assert msg.media_type == "document"
+    assert (msg.file_name, msg.file_size, msg.mime_type) == (
+        "report.pdf", 2201000, "application/pdf",
+    )
+    assert msg.media_summary() == "report.pdf · 2.1 MB"
+
+
+@pytest.mark.asyncio
+async def test_map_message_recognises_a_video(make_backend):
+    backend = make_backend()
+    tm = _media_message("video", size=13002342, duration=45, mime="video/mp4")
+
+    msg = await backend._map_message(tm, 1)
+
+    assert msg.media_type == "video"
+    assert msg.media_summary() == "🎬 Video · 0:45 · 12.4 MB"
+
+
+@pytest.mark.asyncio
+async def test_map_message_names_audio_by_performer_and_title(make_backend):
+    backend = make_backend()
+    tm = _media_message("audio", size=5000000, duration=200, performer="Boards", title="Roygbiv")
+
+    msg = await backend._map_message(tm, 1)
+
+    assert msg.media_type == "audio"
+    assert msg.file_name == "Boards — Roygbiv"
+    assert msg.media_summary() == "Boards — Roygbiv · 3:20 · 4.8 MB"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prop", _ALL_MEDIA_PROPS)
+async def test_map_message_covers_every_media_property(make_backend, prop):
+    """Nothing Telegram sends should fall through to a bare 'text' message."""
+    backend = make_backend()
+
+    msg = await backend._map_message(_media_message(prop), 1)
+
+    assert msg.media_type == prop
+    assert msg.media_summary(), "every attachment needs something to show"
+
+
+@pytest.mark.asyncio
+async def test_map_message_leaves_plain_text_alone(make_backend):
+    backend = make_backend()
+
+    msg = await backend._map_message(_media_message(None, text="just words"), 1)
+
+    assert msg.media_type == "text"
+    assert msg.media_summary() == ""
+    assert msg.text == "just words"
+
+
+@pytest.mark.asyncio
+async def test_map_message_survives_junk_file_metadata(make_backend):
+    """Telethon values are not trusted: the members_count crash taught us that."""
+    backend = make_backend()
+    tm = _media_message("document")
+    tm.file = MagicMock()  # every attribute is a MagicMock, none are usable
+
+    msg = await backend._map_message(tm, 1)
+
+    assert (msg.file_name, msg.file_size, msg.mime_type) == (None, None, None)
+    assert msg.media_summary() == "📎 File"
+
+
+# ============================================================================
+# 11. Attachment downloads: caching and concurrency
+# ============================================================================
+
+
+def _downloadable(backend, chat_id, msg_id, recorder=None, delay=0.0):
+    """Register a fake Telethon message whose download writes a real file."""
+    tm = MagicMock()
+    tm.photo = MagicMock()
+    tm.file = MagicMock()
+    tm.file.ext = ".jpg"
+
+    async def download_media(file, progress_callback=None):
+        if recorder is not None:
+            recorder.start()
+        if delay:
+            await asyncio.sleep(delay)
+        Path(file).write_bytes(b"image-bytes")
+        if recorder is not None:
+            recorder.stop()
+        return file
+
+    tm.download_media = download_media
+    backend._tmsg[(chat_id, msg_id)] = tm
+    return Message(id=msg_id, chat_id=chat_id, media_type="photo", has_photo=True)
+
+
+class _Concurrency:
+    def __init__(self):
+        self.current = self.peak = self.total = 0
+
+    def start(self):
+        self.current += 1
+        self.total += 1
+        self.peak = max(self.peak, self.current)
+
+    def stop(self):
+        self.current -= 1
+
+
+@pytest.mark.asyncio
+async def test_attachment_is_downloaded_once_and_reused(make_backend):
+    backend = make_backend()
+    counter = _Concurrency()
+    msg = _downloadable(backend, 20, 10, recorder=counter)
+
+    first = await backend.fetch_photo(msg)
+    second = await backend.fetch_photo(msg)
+
+    assert first is not None and first == second
+    assert counter.total == 1, "the second view must come from the cache"
+
+
+@pytest.mark.asyncio
+async def test_downloads_are_capped_so_a_chat_cannot_flood_the_network(make_backend):
+    from telegram_tui.telethon_backend import DOWNLOAD_CONCURRENCY
+
+    backend = make_backend()
+    counter = _Concurrency()
+    messages = [
+        _downloadable(backend, 1, i, recorder=counter, delay=0.02) for i in range(12)
+    ]
+
+    await asyncio.gather(*(backend.fetch_photo(m) for m in messages))
+
+    assert counter.total == 12
+    assert counter.peak <= DOWNLOAD_CONCURRENCY
+
+
+@pytest.mark.asyncio
+async def test_download_progress_is_reported(make_backend):
+    backend = make_backend()
+    seen = []
+    tm = MagicMock()
+    tm.document = MagicMock()
+    tm.file = MagicMock()
+    tm.file.ext = ".pdf"
+
+    async def download_media(file, progress_callback=None):
+        progress_callback(512, 1024)
+        Path(file).write_bytes(b"pdf")
+        return file
+
+    tm.download_media = download_media
+    backend._tmsg[(3, 4)] = tm
+    msg = Message(id=4, chat_id=3, media_type="document")
+
+    await backend.fetch_file(msg, progress=lambda got, total: seen.append((got, total)))
+
+    assert seen == [(512, 1024)]

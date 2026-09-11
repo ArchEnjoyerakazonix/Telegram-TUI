@@ -15,6 +15,7 @@ whole suite here.
 from __future__ import annotations
 
 import pathlib
+import tempfile
 from unittest.mock import AsyncMock
 
 import pytest
@@ -31,6 +32,11 @@ def isolate_user_state(tmp_path, monkeypatch):
         "telegram_tui.config.DEFAULT_CONFIG_PATHS",
         (home / ".config" / "telegram-tui" / "config.toml",),
     )
+    # Downloaded media is cached under the temp dir by a stable name, so give
+    # each test its own or they would read each other's files.
+    scratch = tmp_path / "tmp"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
     return home
 
 

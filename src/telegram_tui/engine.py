@@ -291,8 +291,19 @@ class MockEngine(BaseBackend):
 
     # -- media (generated offline so mpv/chafa work in mock mode) -------------
 
+    async def fetch_file(self, message: Message, progress=None) -> Path | None:
+        """Mock attachments: a voice file for audio-ish media, a photo otherwise."""
+        if message.media_type in ("voice", "video_note", "audio"):
+            path = await self.fetch_voice(message)
+        else:
+            path = await self.fetch_photo(message)
+        if path is not None and progress is not None:
+            size = path.stat().st_size
+            progress(size, size)
+        return path
+
     async def fetch_voice(self, message: Message) -> Path | None:
-        if not message.has_voice:
+        if not message.has_voice and message.media_type not in ("voice", "video_note", "audio"):
             return None
         path = self._media_dir / f"voice-{message.id}.wav"
         if not path.exists():
@@ -300,7 +311,7 @@ class MockEngine(BaseBackend):
         return path
 
     async def fetch_photo(self, message: Message) -> Path | None:
-        if not message.has_photo:
+        if not message.has_photo and message.media_type != "photo":
             return None
         path = self._media_dir / f"photo-{message.id}.png"
         if not path.exists():
