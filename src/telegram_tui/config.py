@@ -26,16 +26,16 @@ DEFAULT_CONFIG_PATHS = (
 
 EXAMPLE_CONFIG = """\
 # telegram-tui configuration
-mode = "mock"            # "mock" — симуляция, "live" — реальный аккаунт
+mode = "mock"            # "mock" — offline simulation, "live" — real account
 
-# Обязательно для mode = "live": получите на https://my.telegram.org
+# Required for mode = "live"; get them at https://my.telegram.org
 # api_id = 12345
 # api_hash = "0123456789abcdef0123456789abcdef"
-# session = "telegram-tui"   # имя файла сессии Telethon
+# session = "telegram-tui"   # Telethon session file name
 
-# Медиа (необязательно):
-# media_player = "mpv"     # проигрыватель голосовых сообщений
-# photo_renderer = "chafa" # рендер превью фото в терминале
+# Media (optional):
+# media_player = "mpv"     # player used for voice messages
+# photo_renderer = "chafa" # renders photo previews in the terminal
 """
 
 
@@ -52,9 +52,9 @@ class Config(BaseModel):
     def validate_live_credentials(self) -> "Config":
         if self.mode == "live":
             if self.api_id is None:
-                raise ValueError("В режиме live обязательно указать api_id")
+                raise ValueError("mode = \"live\" requires api_id")
             if not self.api_hash:
-                raise ValueError("В режиме live обязательно указать api_hash")
+                raise ValueError("mode = \"live\" requires api_hash")
         return self
 
     @classmethod
@@ -92,9 +92,9 @@ class Config(BaseModel):
         cfg = cls(**data)
         if cfg.mode == "live" and (not cfg.api_id or not cfg.api_hash):
             raise ValueError(
-                'mode = "live" требует api_id и api_hash: '
-                "укажите их в config.toml или через TG_TUI_API_ID / TG_TUI_API_HASH "
-                "(получить на https://my.telegram.org)"
+                'mode = "live" requires api_id and api_hash: set them in '
+                "config.toml or via TG_TUI_API_ID / TG_TUI_API_HASH "
+                "(get them at https://my.telegram.org)"
             )
         return cfg
 

@@ -32,6 +32,14 @@ class BackendIncoming(TextualMessage):
         super().__init__()
 
 
+class BackendHistoryReady(TextualMessage):
+    """A live backend finished fetching a chat's history."""
+
+    def __init__(self, chat_id: int) -> None:
+        self.chat_id = chat_id
+        super().__init__()
+
+
 class TelegramTUI(App[None]):
     """Terminal Telegram client (mock engine by default, Telethon for live)."""
 
@@ -81,12 +89,13 @@ class TelegramTUI(App[None]):
         Binding("ctrl+e", "search_in_chat", "Find in chat", priority=True),
         Binding("ctrl+o", "load_older_history", "Load history", priority=True),
         Binding("ctrl+down", "focus_panel('next')", "Next panel", priority=True),
-        Binding("ctrl+up", "focus_panel('prev')", "Prev panel", priority=True),
+        Binding("ctrl+up", "focus_panel('prev')", "Prev panel", priority=True, show=False),
         Binding("escape", "back_to_list", "Back to chats", priority=True),
-        Binding("o", "open_media", "Open media", priority=False),
+        # Shown by the feed itself, where the selection it acts on lives.
+        Binding("o", "open_media", "Open media", priority=False, show=False),
         Binding("ctrl+p", "toggle_pin", "Pin chat", priority=True),
-        Binding("ctrl+m", "mark_read", "Mark read", priority=True),
-        Binding("ctrl+u", "force_incoming", "Simulate msg", priority=True),
+        Binding("ctrl+m", "mark_read", "Mark read", priority=True, show=False),
+        Binding("ctrl+u", "force_incoming", "Simulate msg", priority=True, show=False),
     ]
 
     def __init__(
@@ -155,6 +164,11 @@ class TelegramTUI(App[None]):
                 self.exit(message="Authentication cancelled. Run again to retry.")
                 return
 
+        self.engine.on_incoming = lambda msg: self.post_message(BackendIncoming(msg))
+        self.engine.on_history = lambda chat_id: self.post_message(
+            BackendHistoryReady(chat_id)
+        )
+
         try:
             await self.engine.load()
         except Exception as exc:  # noqa: BLE001
@@ -162,9 +176,6 @@ class TelegramTUI(App[None]):
             self.exit(message=f"Failed to load chats: {exc}")
             return
 
-        if self.engine.is_mock:
-            return
-        self.engine.on_incoming = lambda msg: self.post_message(BackendIncoming(msg))
         self._init_ui()
 
     def action_load_older_history(self) -> None:
@@ -339,6 +350,16 @@ class TelegramTUI(App[None]):
     def backend_incoming(self, event: BackendIncoming) -> None:
         self._ingest(event.message)
 
+    @on(BackendHistoryReady)
+    def backend_history_ready(self, event: BackendHistoryReady) -> None:
+        """Swap the "Loading history…" placeholder for the messages that landed."""
+        chat = self.engine.chats.get(event.chat_id)
+        if chat is None:
+            return
+        if event.chat_id == self.current_chat_id:
+            self.query_one(ChatView).show_chat(chat)
+        self.refresh_chat_list()
+
     def _ingest(self, message: Message) -> None:
         """Route a freshly created incoming message into the UI."""
         chat = self.engine.chats.get(message.chat_id)
@@ -347,6 +368,10 @@ class TelegramTUI(App[None]):
         if message.chat_id == self.current_chat_id:
             self.engine.mark_read(message.chat_id)
             self.query_one(ChatView).append_message(message)
+        if message.sender_id == self.engine.me_id:
+            # Our own message, echoed back from another device: nobody is typing.
+            self.refresh_chat_list()
+            return
         self.notify_incoming(chat, message)
 
     def notify_incoming(self, chat: Chat, message: Message) -> None:
@@ -421,6 +446,20 @@ class TelegramTUI(App[None]):
             f"↱ {self.engine.sender_name(message.sender_id)}: {first[:48]}"
         )
         composer.focus()
+
+    # -- reactions -------------------------------------------------------------
+
+    async def react_to_selected(self, emoji: str) -> None:
+        view = self.query_one(ChatView)
+        message = view.selected_message()
+        if message is None:
+            return
+        try:
+            await self.engine.add_reaction(message.chat_id, message.id, emoji)
+        except Exception as exc:  # noqa: BLE001 - RPC errors surface as a toast
+            self.notify(f"Failed to add reaction: {exc}", severity="error")
+            return
+        view.refresh_reactions(message.id)
 
     def clear_pending_reply(self) -> None:
         self.pending_reply = None

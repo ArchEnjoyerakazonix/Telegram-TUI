@@ -21,8 +21,15 @@ class BaseBackend(ABC):
     is_mock: bool = False
     chats: dict[int, Chat]
 
+    #: Id of the signed-in account, once it is known.
+    me_id: int | None = None
+
     #: Set by the app; called with each new incoming Message.
     on_incoming: Callable[[Message], None] | None = None
+
+    #: Set by the app; called with a chat id once its history has been fetched,
+    #: so a feed showing a "loading" placeholder can redraw itself.
+    on_history: Callable[[int], None] | None = None
 
     #: Raised by ``submit_code`` when the account has 2FA enabled.
     PasswordNeededError = Exception

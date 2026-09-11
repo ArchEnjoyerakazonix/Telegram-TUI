@@ -27,7 +27,7 @@ from telegram_tui.media import (
     render_photo,
 )
 from telegram_tui.models import Chat, ChatType, Message
-from telegram_tui.telethon_backend import TelethonBackend, _display_name
+from telegram_tui.telethon_backend import _display_name
 from telegram_tui.widgets.chat_view import (
     ChatView,
     MessageWidget,
@@ -425,25 +425,132 @@ async def test_chat_view_load_older_history_backend_error():
 
 
 @pytest.mark.asyncio
-async def test_telethon_backend_start_connection_error():
-    backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
+async def test_telethon_backend_start_connection_error(make_backend):
+    backend = make_backend()
     backend._client.connect = AsyncMock(side_effect=ConnectionError("No internet connection"))
-    # start() now handles ConnectionError gracefully: resets session and returns False
-    result = await backend.start()
-    assert result is False
+    # A dead network is the app's problem to report, not a reason to sign out.
+    with pytest.raises(ConnectionError):
+        await backend.start()
 
 
 @pytest.mark.asyncio
-async def test_telethon_backend_load_get_me_none():
-    backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
+async def test_telethon_backend_connection_error_keeps_session_file(make_backend):
+    """Being offline must never cost the user their login."""
+    backend = make_backend()
+    session_file = Path(backend._session_path + ".session")
+    session_file.write_text("existing-session", encoding="utf-8")
+
+    backend._client.connect = AsyncMock(side_effect=ConnectionError("No internet connection"))
+    with pytest.raises(ConnectionError):
+        await backend.start()
+
+    assert session_file.exists()
+    assert session_file.read_text(encoding="utf-8") == "existing-session"
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_resets_session_on_rejected_auth_key(make_backend):
+    """A key Telegram has revoked is worthless, so that one does get cleared."""
+    from telethon import errors
+
+    backend = make_backend()
+    session_file = Path(backend._session_path + ".session")
+    session_file.write_text("stale-session", encoding="utf-8")
+
+    backend._client.connect = AsyncMock(side_effect=errors.AuthKeyUnregisteredError(None))
+    assert await backend.start() is False
+    # The client rebuilds an empty session file; what matters is the stale one is gone.
+    assert not session_file.exists() or session_file.read_bytes() != b"stale-session"
+
+
+class _FakeDialog:
+    """Shaped like the telethon Dialog objects load() iterates over."""
+
+    def __init__(self, dialog_id, name, *, is_channel=False, is_group=False,
+                 participants=None, broadcast=False, pinned=False, unread=0):
+        self.id = dialog_id
+        self.name = name
+        self.is_channel = is_channel
+        self.is_group = is_group
+        self.pinned = pinned
+        self.unread_count = unread
+        self.date = dt.datetime.now(dt.timezone.utc)
+        self.entity = MagicMock()
+        self.entity.participants_count = participants
+        self.entity.admin_rights = None
+        self.entity.creator = False
+        self.entity.broadcast = broadcast
+
+
+def _stub_client_for_load(backend, dialogs):
+    me = MagicMock()
+    me.id, me.first_name, me.last_name = 1, "Me", None
+    backend._client.get_me = AsyncMock(return_value=me)
+    backend._client.add_event_handler = MagicMock()
+
+    async def iter_dialogs(limit=None):
+        for dialog in dialogs:
+            yield dialog
+
+    async def iter_messages(*args, **kwargs):
+        return
+        yield  # pragma: no cover - makes this an async generator
+
+    backend._client.iter_dialogs = iter_dialogs
+    backend._client.iter_messages = iter_messages
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_load_maps_real_dialog_shapes(make_backend):
+    """Telethon hands back int / None participant counts; load() must survive both."""
+    backend = make_backend()
+    _stub_client_for_load(
+        backend,
+        [
+            _FakeDialog(-100, "Arch News", is_channel=True, participants=8302, broadcast=True),
+            _FakeDialog(-200, "Dev Team", is_group=True, participants=12),
+            _FakeDialog(555, "A Friend", participants=None),
+        ],
+    )
+
+    await backend.load()
+
+    assert set(backend.chats) == {-100, -200, 555}
+    assert backend.chats[-100].members_count == "8,302 subscribers"
+    assert backend.chats[-200].members_count == "12 members"
+    assert backend.chats[555].members_count == ""
+    assert backend.chats[-100].is_read_only is True
+    assert backend.chats[-200].is_read_only is False
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_load_handles_single_member_and_zero(make_backend):
+    backend = make_backend()
+    _stub_client_for_load(
+        backend,
+        [
+            _FakeDialog(-300, "Just Me", is_group=True, participants=1),
+            _FakeDialog(-400, "Empty", is_group=True, participants=0),
+        ],
+    )
+
+    await backend.load()
+
+    assert backend.chats[-300].members_count == "1 member"
+    assert backend.chats[-400].members_count == ""
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_load_get_me_none(make_backend):
+    backend = make_backend()
     backend._client.get_me = AsyncMock(return_value=None)
     with pytest.raises(RuntimeError, match="get_me returned None"):
         await backend.load()
 
 
 @pytest.mark.asyncio
-async def test_telethon_backend_download_media_error():
-    backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
+async def test_telethon_backend_download_media_error(make_backend):
+    backend = make_backend()
     msg = Message(id=10, chat_id=20, sender_id=1, has_photo=True, media_type="photo")
     fake_tm = MagicMock()
     fake_tm.photo = MagicMock()
@@ -535,6 +642,7 @@ async def test_app_play_voice_exceptions():
     app = TelegramTUI(engine=engine, live_traffic=False)
     app.notify = lambda msg, *args, **kwargs: notified.append(msg)
     async with app.run_test() as pilot:
+        await pilot.pause()  # the initial selection settles on the next refresh
         await app.play_selected_voice()
         assert any("Failed" in str(m) for m in notified)
 
@@ -555,22 +663,81 @@ async def test_app_open_media_photo_exceptions():
     app = TelegramTUI(engine=engine, live_traffic=False)
     app.notify = lambda msg, *args, **kwargs: notified.append(msg)
     async with app.run_test() as pilot:
+        await pilot.pause()  # the initial selection settles on the next refresh
         await app.open_selected_media()
         assert any("Failed" in str(m) for m in notified)
 
 
 @pytest.mark.asyncio
-async def test_telethon_backend_add_reaction_exception_handled():
-    backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
+async def test_telethon_backend_add_reaction_exception_handled(make_backend):
+    backend = make_backend()
     backend._entities[1] = MagicMock()
     backend._client = MagicMock(side_effect=RuntimeError("Reaction RPC forbidden"))
     # Must not raise an unhandled exception
     await backend.add_reaction(1, 100, "🔥")
 
 
+def _new_message_event(msg_id, *, chat_id=42, sender_id=7, out=False, text="Hello live"):
+    event = MagicMock()
+    event.chat_id = chat_id
+    event.message = MagicMock()
+    event.message.id = msg_id
+    event.message.sender_id = sender_id
+    event.message.message = text
+    event.message.out = out
+    event.message.date = dt.datetime.now(dt.timezone.utc)
+    event.message.voice = None
+    event.message.video_note = None
+    event.message.sticker = None
+    event.message.photo = None
+    event.message.reactions = None
+    event.message.reply_to = None
+    return event
+
+
 @pytest.mark.asyncio
-async def test_telethon_backend_on_new_message_caches_in_history():
-    backend = TelethonBackend(12345, "0123456789abcdef0123456789abcdef")
+async def test_telethon_backend_new_message_does_not_duplicate_sent_message(make_backend):
+    """send() caches the message; the NewMessage echo must not add it again."""
+    backend = make_backend()
+    backend.chats[42] = Chat(id=42, title="Friend", chat_type=ChatType.PRIVATE)
+    backend._entities[42] = MagicMock()
+
+    sent_tm = _new_message_event(999, out=True, text="typed here").message
+    backend._client.send_message = AsyncMock(return_value=sent_tm)
+    await backend.send(42, "typed here")
+    assert len(backend.messages[42]) == 1
+
+    await backend._on_new_message(_new_message_event(999, out=True, text="typed here"))
+
+    assert len(backend.messages[42]) == 1
+    assert backend.chats[42].unread == 0
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_outgoing_from_other_device_is_kept_unread_free(make_backend):
+    """A message typed on the phone has no local copy, so it belongs in the feed."""
+    backend = make_backend()
+    backend.chats[42] = Chat(id=42, title="Friend", chat_type=ChatType.PRIVATE)
+
+    await backend._on_new_message(_new_message_event(1000, out=True, text="from phone"))
+
+    assert [m.id for m in backend.messages[42]] == [1000]
+    assert backend.chats[42].unread == 0  # our own message is not unread
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_incoming_message_increments_unread(make_backend):
+    backend = make_backend()
+    backend.chats[42] = Chat(id=42, title="Friend", chat_type=ChatType.PRIVATE)
+
+    await backend._on_new_message(_new_message_event(1001, out=False))
+
+    assert backend.chats[42].unread == 1
+
+
+@pytest.mark.asyncio
+async def test_telethon_backend_on_new_message_caches_in_history(make_backend):
+    backend = make_backend()
     chat = Chat(id=42, title="Active Chat", chat_type=ChatType.PRIVATE)
     backend.chats[42] = chat
 

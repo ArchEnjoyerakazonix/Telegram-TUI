@@ -1,10 +1,10 @@
 # telegram-tui
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776ab.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776ab.svg?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 102 Passed](https://img.shields.io/badge/tests-102%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 128 Passed](https://img.shields.io/badge/tests-128%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -35,7 +35,7 @@ Features a high-contrast three-panel interface, native terminal media rendering 
 
 ### Prerequisites
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - *(Optional)* [`chafa`](https://hpjansson.org/chafa/) — For in-terminal image previews
 - *(Optional)* [`mpv`](https://mpv.io/) — For audio voice playback and floating PIP video notes
 
@@ -65,8 +65,11 @@ cd Telegram-TUI
 python -m venv .venv
 source .venv/bin/activate
 
-# Install in editable mode
-pip install -e .
+# Install in editable mode, with Telethon for live mode
+pip install -e ".[live]"
+
+# Mock mode only (no Telegram connection) needs no extras:
+# pip install -e .
 ```
 
 ---
@@ -152,6 +155,7 @@ Telegram TUI is built for speed and fully navigable without a mouse.
 | `gg` / `G` | Jump to oldest / newest message |
 | `r` | Quote-reply to selected message |
 | `v` | Play voice note or open video note in `mpv` |
+| `s` | Stop background audio playback |
 | `o` | Open photo/video in external viewer or `mpv` PIP |
 | `1` – `5` | Add quick reaction (👍, ❤️, 🔥, 🎉, 🤔) |
 | `Ctrl+O` | Load older message history from server |
@@ -184,11 +188,13 @@ telegram-tui/
 │   └── widgets/
 │       ├── chat_list.py       # Sidebar chat items with badges & search
 │       ├── chat_view.py       # Message bubbles, waveforms, syntax highlighting
-│       ├── input_box.py       # Multiline composer with reply bar
+│       ├── composer.py        # Multiline composer with reply bar
 │       └── photo.py           # Inline ASCII/Sixel/Kitty image renderer
 ├── tests/
-│   ├── test_adversarial.py    # 41 rigorous adversarial & stress tests
+│   ├── conftest.py            # Isolates HOME and blocks network for every test
+│   ├── test_adversarial.py    # Adversarial & stress tests, incl. live-mode mapping
 │   ├── test_auth.py           # Full auth modal lifecycle & 2FA tests
+│   ├── test_cli.py            # Entry point: config errors & --mode overrides
 │   ├── test_config.py         # Config priority, parsing & persistence tests
 │   ├── test_engine.py         # Mock engine state & conversation simulation tests
 │   ├── test_features_mvp.py   # MVP feature validation tests
@@ -212,7 +218,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**102 tests** passing across all subsystems:
+**128 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

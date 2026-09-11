@@ -13,10 +13,15 @@ import tempfile
 from pathlib import Path
 
 from .backend import BaseBackend
-from .models import Chat, ChatType, Message, utcnow
+from .models import Chat, ChatType, Message, media_label, utcnow
 
 DIALOG_LIMIT = 50
 MESSAGES_PER_DIALOG = 30
+
+#: How many raw Telethon messages to keep around for media downloads. They are
+#: only needed to re-download attachments, so the oldest are dropped first
+#: rather than letting a long-running session grow without bound.
+TMSG_CACHE_LIMIT = 2000
 
 _log = logging.getLogger(__name__)
 
@@ -31,6 +36,15 @@ def _resolve_session_path(session: str) -> str:
     config_dir = Path.home() / ".config" / "telegram-tui"
     config_dir.mkdir(parents=True, exist_ok=True)
     return str(config_dir / p)
+
+
+def _members_label(entity, chat_type: ChatType) -> str:
+    """Chat subtitle text; Telethon reports a raw count, the model holds a label."""
+    count = getattr(entity, "participants_count", None)
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        return ""
+    noun = "subscriber" if chat_type is ChatType.CHANNEL else "member"
+    return f"{count:,} {noun}" if count == 1 else f"{count:,} {noun}s"
 
 
 def _preview(text: str) -> str:
@@ -58,7 +72,7 @@ class TelethonBackend(BaseBackend):
         self.PasswordNeededError = errors.SessionPasswordNeededError
         self._session_path = _resolve_session_path(session)
         self._client = TelegramClient(self._session_path, api_id, api_hash)
-        self._tmsg: dict[int, object] = {}
+        self._tmsg: dict[tuple[int, int], object] = {}
         self._entities: dict[int, object] = {}
         self._media_dir = Path(tempfile.gettempdir()) / "telegram-tui-media"
         self._media_dir.mkdir(exist_ok=True)
@@ -75,9 +89,10 @@ class TelethonBackend(BaseBackend):
     async def start(self) -> bool:
         """Connect and check authorization.
 
-        If the local session file contains a stale / unregistered auth key,
-        we delete it and reconnect with a fresh session rather than hanging
-        or showing a blank screen.
+        Only Telegram itself rejecting the stored auth key justifies throwing
+        the session away; a transient connection failure propagates so the app
+        can report it, because deleting the session there would force a full
+        re-login every time the network is down.
         """
         try:
             await self._client.connect()
@@ -87,10 +102,6 @@ class TelethonBackend(BaseBackend):
             self._errors.AuthKeyInvalidError,
         ):
             _log.warning("Session auth key rejected by Telegram — resetting session")
-            await self._reset_session()
-            return False
-        except (ConnectionError, OSError) as exc:
-            _log.warning("Connection failed (%s) — resetting session and retrying", exc)
             await self._reset_session()
             return False
 
@@ -140,7 +151,6 @@ class TelethonBackend(BaseBackend):
 
             is_admin = bool(getattr(entity, "admin_rights", None) or getattr(entity, "creator", False))
             is_read_only = bool(getattr(entity, "broadcast", False) and not is_admin)
-            members_count = getattr(entity, "participants_count", None)
 
             chat = Chat(
                 id=dialog.id,
@@ -150,7 +160,7 @@ class TelethonBackend(BaseBackend):
                 unread=dialog.unread_count or 0,
                 last_activity=dialog.date or utcnow(),
                 is_read_only=is_read_only,
-                members_count=members_count,
+                members_count=_members_label(entity, chat_type),
             )
             self.chats[chat.id] = chat
             self.messages[chat.id] = []
@@ -158,7 +168,6 @@ class TelethonBackend(BaseBackend):
 
     def _load_history(self, chat_id: int, entity) -> None:
         """Fetch recent history in the background; UI renders what's cached."""
-        from telethon.errors import RPCError
 
         async def job() -> None:
             try:
@@ -169,13 +178,18 @@ class TelethonBackend(BaseBackend):
                 for tm in reversed(tmsgs):
                     mapped.append(await self._map_message(tm, chat_id))
                 self.messages[chat_id] = mapped
-                self._ready[chat_id] = True
                 chat = self.chats.get(chat_id)
                 if chat and mapped:
                     chat.preview = _preview(mapped[-1].text)
                     chat.last_activity = mapped[-1].timestamp
             except Exception:
+                _log.warning("History fetch failed for chat %s", chat_id, exc_info=True)
+            finally:
+                # Mark ready and tell the UI either way, otherwise a feed that
+                # is showing "Loading history…" would sit there forever.
                 self._ready[chat_id] = True
+                if self.on_history is not None:
+                    self.on_history(chat_id)
 
         asyncio.get_running_loop().create_task(job())
 
@@ -231,17 +245,8 @@ class TelethonBackend(BaseBackend):
                 reactions.append((str(emoji), int(count)))
 
         fallback_text = tm.message or ""
-        if not fallback_text:
-            if media_type == "voice":
-                fallback_text = "🎙 voice message"
-            elif media_type == "video_note":
-                fallback_text = "⭕ video note"
-            elif media_type == "sticker":
-                fallback_text = f"🎭 sticker {sticker_emoji or ''}".strip()
-            elif media_type == "photo":
-                fallback_text = "🖼 photo"
-            elif getattr(tm, "media", None):
-                fallback_text = "📎 attachment"
+        if not fallback_text and (media_type != "text" or getattr(tm, "media", None)):
+            fallback_text = media_label(media_type, sticker_emoji)
 
         # Waveform for audio/voice
         waveform = None
@@ -268,19 +273,36 @@ class TelethonBackend(BaseBackend):
             reactions=reactions,
             waveform=waveform,
         )
-        self._tmsg[(chat_id, tm.id)] = tm
+        self._remember_raw(chat_id, tm)
         return msg
 
+    def _remember_raw(self, chat_id: int, tm) -> None:
+        """Cache the raw message for later media downloads, oldest evicted first."""
+        key = (chat_id, tm.id)
+        self._tmsg.pop(key, None)
+        self._tmsg[key] = tm
+        while len(self._tmsg) > TMSG_CACHE_LIMIT:
+            self._tmsg.pop(next(iter(self._tmsg)))
+
     async def _on_new_message(self, event) -> None:
+        """Handle a NewMessage update.
+
+        The event fires for our own messages too, so anything ``send()`` has
+        already cached must not be added a second time — but a message typed on
+        another device has no local copy and does belong in the feed.
+        """
         chat_id = event.chat_id
         if chat_id not in self.chats:
+            return
+        if any(m.id == event.message.id for m in self.messages.get(chat_id, [])):
             return
         msg = await self._map_message(event.message, chat_id)
         self.messages.setdefault(chat_id, []).append(msg)
         chat = self.chats[chat_id]
         chat.last_activity = msg.timestamp
         chat.preview = _preview(msg.text)
-        chat.unread += 1
+        if not getattr(event.message, "out", False):
+            chat.unread += 1
         if self.on_incoming is not None:
             self.on_incoming(msg)
 

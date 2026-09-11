@@ -5,8 +5,9 @@ import pytest
 from telegram_tui.app import TelegramTUI
 from telegram_tui.engine import MockEngine
 from telegram_tui.widgets.chat_list import ChatItem, ChatList
-from telegram_tui.widgets.chat_view import ChatView
+from telegram_tui.widgets.chat_view import QUICK_REACTIONS, ChatView
 from telegram_tui.widgets.composer import Composer
+from telegram_tui.widgets.photo import PhotoWidget
 
 SIZE = (110, 32)
 
@@ -375,3 +376,143 @@ async def test_voice_without_voice_message_notifies(app, monkeypatch):
     await pilot.press("v")
     await pilot.pause()
     assert notified, "должно прийти уведомление об отсутствии голосового"
+
+
+# -- feed scrolling ---------------------------------------------------------
+
+
+async def _open_chat_with_history(app, pilot):
+    """Open a chat whose history is taller than the viewport."""
+    target = max(app.engine.chats, key=lambda cid: len(app.engine.history(cid)))
+    app.open_chat(target, force=True)
+    await pilot.pause()
+    await pilot.pause()
+    return app.query_one(ChatView)
+
+
+async def test_opening_a_chat_lands_on_the_newest_message(app):
+    app, pilot = app
+    view = await _open_chat_with_history(app, pilot)
+    assert view.max_scroll_y > 0, "test needs a chat taller than the viewport"
+    assert view.scroll_y == view.max_scroll_y
+    assert view.selected_message() is app.engine.history(view.chat_id)[-1]
+
+
+async def test_incoming_message_keeps_the_feed_at_the_bottom(app):
+    app, pilot = app
+    view = await _open_chat_with_history(app, pilot)
+
+    app._ingest(app.engine.inject_incoming(view.chat_id))
+    await pilot.pause()
+    await pilot.pause()
+
+    assert view.scroll_y == view.max_scroll_y
+
+
+async def test_incoming_message_does_not_yank_a_reader_of_scrollback(app):
+    app, pilot = app
+    view = await _open_chat_with_history(app, pilot)
+    view.scroll_to(y=0, animate=False)
+    await pilot.pause()
+    assert view.scroll_y == 0
+
+    app._ingest(app.engine.inject_incoming(view.chat_id))
+    await pilot.pause()
+    await pilot.pause()
+
+    assert view.scroll_y == 0, "reading history must not be interrupted"
+
+
+# -- quick reactions --------------------------------------------------------
+
+
+async def _focus_feed_on(app, pilot, predicate):
+    """Focus the feed with the first message matching predicate selected."""
+    view = app.query_one(ChatView)
+    view.focus()
+    await pilot.pause()
+    for index, widget in enumerate(view._widgets()):
+        if predicate(widget.message):
+            view.select(index)
+            await pilot.pause()
+            return view, widget
+    raise AssertionError("no matching message in the opened chat")
+
+
+async def test_number_key_posts_a_reaction(app):
+    app, pilot = app
+    view, widget = await _focus_feed_on(app, pilot, lambda m: not m.reactions)
+
+    await pilot.press("3")
+    await pilot.pause()
+
+    assert widget.message.reactions == [("🔥", 1)]
+    assert widget._reaction_row.display is True
+
+
+async def test_repeated_reaction_increments_the_count(app):
+    app, pilot = app
+    view, widget = await _focus_feed_on(app, pilot, lambda m: not m.reactions)
+
+    await pilot.press("1")
+    await pilot.press("1")
+    await pilot.pause()
+
+    assert widget.message.reactions == [("👍", 2)]
+
+
+async def test_reaction_keys_cover_the_documented_set(app):
+    app, pilot = app
+    view, widget = await _focus_feed_on(app, pilot, lambda m: not m.reactions)
+
+    for key in QUICK_REACTIONS:
+        await pilot.press(key)
+    await pilot.pause()
+
+    assert [emoji for emoji, _count in widget.message.reactions] == list(
+        QUICK_REACTIONS.values()
+    )
+
+
+async def test_reaction_on_empty_selection_is_a_no_op(app):
+    app, pilot = app
+    view = app.query_one(ChatView)
+    view.focus()
+    await pilot.pause()
+    view._selected = -1
+
+    await pilot.press("2")
+    await pilot.pause()  # must not raise
+
+
+# -- photo previews ---------------------------------------------------------
+
+
+async def _photo_widget(size):
+    """Open the chat holding a photo and return (feed, photo widget) at ``size``."""
+    app = TelegramTUI(engine=MockEngine(seed=42), live_traffic=False)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        target = next(
+            cid
+            for cid in app.engine.chats
+            if any(m.has_photo for m in app.engine.history(cid))
+        )
+        app.open_chat(target, force=True)
+        for _ in range(4):
+            await pilot.pause()
+        yield app.query_one(ChatView), app.query(PhotoWidget).first()
+
+
+async def test_photo_preview_is_capped_to_half_the_feed():
+    async for feed, photo in _photo_widget((120, 40)):
+        _cols, rows = photo._preview_box()
+        assert rows <= feed.size.height // 2, "a preview must not swallow the feed"
+
+
+async def test_photo_preview_shrinks_with_the_terminal():
+    async for _feed, photo in _photo_widget((120, 40)):
+        big = photo._preview_box()
+    async for _feed, photo in _photo_widget((90, 24)):
+        small = photo._preview_box()
+    assert small[0] < big[0] and small[1] < big[1]

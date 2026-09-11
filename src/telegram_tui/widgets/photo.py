@@ -31,6 +31,18 @@ class PhotoWidget(Static):
     def on_mount(self) -> None:
         self.run_worker(self._load(), exit_on_error=False, group="photo")
 
+    def _preview_box(self) -> tuple[int, int]:
+        """Cell box handed to chafa.
+
+        The height is capped at half the visible feed: a preview is a preview,
+        and an uncapped one pushes the whole conversation off the screen.
+        """
+        cols = max(24, min(64, self.app.size.width - 48))
+        feed = self.screen.query("#messages")
+        feed_height = feed.first().size.height if feed else self.app.size.height
+        rows = max(8, min(int(cols * 0.5), feed_height // 2))
+        return cols, rows
+
     async def _load(self) -> None:
         try:
             path = await self._backend.fetch_photo(self._message)
@@ -40,8 +52,7 @@ class PhotoWidget(Static):
         if path is None:
             self.update("🖼 photo")
             return
-        cols = max(24, min(64, self.app.size.width - 48))
-        rows = max(8, int(cols * 0.5))
+        cols, rows = self._preview_box()
         loop = asyncio.get_running_loop()
         ansi = await loop.run_in_executor(
             None,

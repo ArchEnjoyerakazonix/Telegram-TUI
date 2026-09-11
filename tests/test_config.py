@@ -1,5 +1,7 @@
 """Tests for configuration loading (mock/live switch)."""
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -67,3 +69,12 @@ def test_default_paths_and_example_config():
     assert all(isinstance(p, object) for p in DEFAULT_CONFIG_PATHS)
     assert 'mode = "mock"' in EXAMPLE_CONFIG
     assert "my.telegram.org" in EXAMPLE_CONFIG
+
+
+def test_user_facing_config_text_is_english():
+    """The UI was translated once and these strings were left behind in Russian."""
+    cyrillic = re.compile("[а-яА-Я]")
+    assert not cyrillic.search(EXAMPLE_CONFIG)
+    with pytest.raises(ValueError) as exc_info:
+        Config(mode="live")
+    assert not cyrillic.search(str(exc_info.value))

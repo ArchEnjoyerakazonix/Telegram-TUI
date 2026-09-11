@@ -37,6 +37,23 @@ class Chat(BaseModel):
     is_read_only: bool = False
 
 
+MEDIA_LABELS = {
+    "voice": "🎙 Voice message",
+    "video_note": "⭕ Video note",
+    "sticker": "🎭 Sticker",
+    "photo": "🖼 Photo",
+    "document": "📎 Attachment",
+}
+
+
+def media_label(media_type: str, sticker_emoji: str | None = None) -> str:
+    """What to show for a message that carries media but no text of its own."""
+    label = MEDIA_LABELS.get(media_type, "📎 Attachment")
+    if sticker_emoji and media_type == "sticker":
+        return f"{label} {sticker_emoji}"
+    return label
+
+
 class Message(BaseModel):
     id: int
     chat_id: int

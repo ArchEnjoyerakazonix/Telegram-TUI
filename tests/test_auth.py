@@ -9,6 +9,7 @@ from telegram_tui.auth import LoginScreen
 from telegram_tui.backend import BaseBackend
 from telegram_tui.models import Chat, ChatType, Message
 from telegram_tui.widgets.chat_list import ChatList
+from telegram_tui.widgets.chat_view import ChatView
 
 
 class FakeLiveBackend(BaseBackend):
@@ -55,6 +56,9 @@ class FakeLiveBackend(BaseBackend):
         self.authorized = True
 
     async def load(self) -> None:
+        # load() starts the background history fetches, so the app must have
+        # wired its callbacks before calling it.
+        self.callbacks_ready = (self.on_incoming is not None, self.on_history is not None)
         self.loaded = True
 
     def sorted_chats(self, query: str = ""):
@@ -79,6 +83,28 @@ class FakeLiveBackend(BaseBackend):
         msg = Message(id=len(self._history) + 10, chat_id=chat_id, sender_id=0, text=text)
         self._history.append(msg)
         return msg
+
+
+class DeferredHistoryBackend(FakeLiveBackend):
+    """Already signed in, but the history only lands some time after load()."""
+
+    async def start(self) -> bool:
+        return True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.history_ready = False
+
+    def ensure_history(self, chat_id: int) -> bool:
+        return self.history_ready
+
+    def history(self, chat_id: int):
+        return list(self._history) if self.history_ready else []
+
+    def deliver_history(self) -> None:
+        self.history_ready = True
+        if self.on_history is not None:
+            self.on_history(1)
 
 
 def make_app(backend: FakeLiveBackend):
@@ -183,3 +209,29 @@ def test_backend_incoming_event():
     event = BackendIncoming(msg)
     assert isinstance(event, TextualMessage)
     assert event.message.text == "Hello live"
+
+
+# -- post-login history loading ---------------------------------------------
+
+
+async def test_callbacks_are_wired_before_load_starts_fetching():
+    backend = DeferredHistoryBackend()
+    app = make_app(backend)
+    async with app.run_test(size=(100, 30)) as pilot:
+        assert await wait_until(pilot, lambda: backend.loaded)
+        assert backend.callbacks_ready == (True, True)
+
+
+async def test_feed_redraws_when_history_arrives_after_login():
+    """Opening a chat before its history downloads must not strand the feed."""
+    backend = DeferredHistoryBackend()
+    app = make_app(backend)
+    async with app.run_test(size=(100, 30)) as pilot:
+        assert await wait_until(pilot, lambda: app.current_chat_id == 1)
+        view = app.query_one(ChatView)
+        assert not view._widgets(), "history has not arrived yet"
+
+        backend.deliver_history()
+
+        assert await wait_until(pilot, lambda: bool(view._widgets()))
+        assert view._widgets()[0].message.text == "привет из live"

@@ -22,6 +22,9 @@ from .photo import PhotoWidget
 
 _FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
 
+#: Number keys that post a reaction to the selected message.
+QUICK_REACTIONS = {"1": "👍", "2": "❤️", "3": "🔥", "4": "🎉", "5": "🤔"}
+
 _SENDER_STYLES = [
     "bold cyan",
     "bold green",
@@ -174,20 +177,36 @@ class MessageWidget(Vertical):
         if self.message.has_photo:
             yield PhotoWidget(self.message, self.app.engine)
 
-        if self.message.reactions:
-            r_text = Text()
-            for item in self.message.reactions:
-                if isinstance(item, (tuple, list)) and len(item) == 2:
-                    emoji, count = item
-                    emoji = str(emoji) if emoji is not None else "👍"
-                    try:
-                        count = int(count) if count is not None else 1
-                    except (ValueError, TypeError):
-                        count = 1
-                    r_text.append(f" {emoji} {count} ", style="bold #111413 on #7aa2f7")
-                    r_text.append(" ")
-            if len(r_text) > 0:
-                yield Static(r_text, classes="msg-reactions")
+        # Always mounted, hidden while empty, so a reaction added later can be
+        # rendered in place instead of rebuilding the whole message.
+        text = self._reactions_text()
+        self._reaction_row = Static(text or Text(), classes="msg-reactions")
+        self._reaction_row.display = text is not None
+        yield self._reaction_row
+
+    def _reactions_text(self) -> Text | None:
+        """Reaction badges, or None when the message has none worth drawing."""
+        r_text = Text()
+        for item in self.message.reactions:
+            if isinstance(item, (tuple, list)) and len(item) == 2:
+                emoji, count = item
+                emoji = str(emoji) if emoji is not None else "👍"
+                try:
+                    count = int(count) if count is not None else 1
+                except (ValueError, TypeError):
+                    count = 1
+                r_text.append(f" {emoji} {count} ", style="bold #111413 on #7aa2f7")
+                r_text.append(" ")
+        return r_text if len(r_text) > 0 else None
+
+    def refresh_reactions(self) -> None:
+        """Redraw the reaction row after the backend recorded a new reaction."""
+        row = getattr(self, "_reaction_row", None)
+        if row is None:
+            return
+        text = self._reactions_text()
+        row.update(text or Text())
+        row.display = text is not None
 
     def set_selected(self, selected: bool) -> None:
         self.set_class(selected, "-selected")
@@ -222,11 +241,16 @@ class ChatView(VerticalScroll):
         Binding("g,g", "sel_first", "First", show=False),
         Binding("r", "app_reply", "Reply"),
         Binding("v", "app_voice", "Play voice"),
+        Binding("s", "app.stop_voice", "Stop audio", show=False),
         Binding("o", "app_open_media", "Open media"),
         Binding("/", "app_find", "Find in chat"),
         Binding("ctrl+o", "load_older", "Load history", priority=True),
         Binding("n", "next_hit", show=False),
         Binding("N", "prev_hit", show=False),
+        *[
+            Binding(key, f"react('{emoji}')", f"React {emoji}", show=False)
+            for key, emoji in QUICK_REACTIONS.items()
+        ],
     ]
 
     DEFAULT_CSS = """
@@ -251,8 +275,14 @@ class ChatView(VerticalScroll):
         self.mount(Static("⬆ Load older messages (Ctrl+O)", classes="load-older"))
         for message in self.engine.history(chat.id):
             self.mount(self._make_message_widget(message))
-        self.scroll_end(animate=False, force=True)
+        # Freshly mounted widgets have no height until the next refresh, so
+        # scrolling right now would measure a stale layout and land at the top.
+        self.call_after_refresh(self._jump_to_latest)
+
+    def _jump_to_latest(self) -> None:
+        """Select the newest message and pin the viewport to the bottom."""
         self.select(len(self._widgets()) - 1)
+        self.scroll_end(animate=False, force=True)
 
     async def action_load_older(self) -> None:
         if not self.chat_id:
@@ -280,13 +310,13 @@ class ChatView(VerticalScroll):
             self.app.notify("You have reached the beginning of chat history", timeout=2)
 
     def append_message(self, message: Message, scroll: bool = True) -> MessageWidget:
-        was_last_selected = self._selected >= len(self._widgets()) - 1
+        """Add a message to the feed, following it only if the user is already
+        at the bottom — someone reading scrollback should not be yanked away."""
+        at_bottom = self.scroll_offset.y >= self.max_scroll_y - 1
         widget = self._make_message_widget(message)
         self.mount(widget)
-        if scroll or was_last_selected:
-            self.scroll_end(animate=False, force=True)
-        if was_last_selected:
-            self.select(len(self._widgets()) - 1)
+        if scroll and at_bottom:
+            self.call_after_refresh(self._jump_to_latest)
         return widget
 
     def _make_message_widget(self, message: Message) -> MessageWidget:
@@ -344,6 +374,15 @@ class ChatView(VerticalScroll):
 
     async def action_app_open_media(self) -> None:
         await self.app.open_selected_media()
+
+    async def action_react(self, emoji: str) -> None:
+        await self.app.react_to_selected(emoji)
+
+    def refresh_reactions(self, message_id: int) -> None:
+        for widget in self._widgets():
+            if widget.message.id == message_id:
+                widget.refresh_reactions()
+                return
 
     def action_app_find(self) -> None:
         self.app.action_search_in_chat()

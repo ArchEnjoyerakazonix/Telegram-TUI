@@ -16,7 +16,7 @@ from typing import NamedTuple
 
 from .backend import BaseBackend
 from .media import write_mock_photo, write_mock_voice
-from .models import Chat, ChatType, Message, User, utcnow
+from .models import Chat, ChatType, Message, User, media_label, utcnow
 
 TICK_INCOMING_PROBABILITY = 0.55
 AUTO_REPLY_PROBABILITY = 0.8
@@ -162,7 +162,7 @@ class MockEngine(BaseBackend):
         self.messages[chat_id].append(msg)
         chat = self.chats[chat_id]
         chat.last_activity = msg.timestamp
-        chat.preview = _one_line(text or f"[{media_type}]")
+        chat.preview = _one_line(text or media_label(media_type, sticker_emoji))
         return msg
 
     def _snippet_msg(self, chat_id: int, sender_id: int, minutes_ago: int) -> Message:
@@ -172,6 +172,7 @@ class MockEngine(BaseBackend):
     def _build_fixture(self) -> None:
         me = self._user("You")
         self.me = me
+        self.me_id = me.id
 
         devs = self._chat("Textual Devs", ChatType.GROUP, ["Alice", "Bob", "Kate"], pinned=True)
         devs.members_count = "12 members · 4 online"

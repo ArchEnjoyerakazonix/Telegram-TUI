@@ -95,8 +95,8 @@ class ChatList(ListView):
     BINDINGS = [
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
-        Binding("/", "search", "Search"),
-        Binding("p", "app.toggle_pin", "Pin"),
+        Binding("/", "search", "Search", show=False),
+        Binding("p", "app.toggle_pin", "Pin", show=False),
     ]
 
     DEFAULT_CSS = """
