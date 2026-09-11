@@ -4,7 +4,7 @@
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 253 Passed](https://img.shields.io/badge/tests-253%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 260 Passed](https://img.shields.io/badge/tests-260%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -24,7 +24,7 @@ Features a high-contrast three-panel interface, native terminal media rendering 
   - **Sending Files**: `Ctrl+R` opens a picker with Tab-completing path entry and a directory tree; queue several with `Ctrl+N`, caption them from the composer, and send uncompressed when you need the original bytes.
 - **Three-Panel Layout**:
   - **Sidebar**: Search filtering (`/` or `Ctrl+F`), pinned chats (`Ctrl+P`), unread badge counters, and chat type badges (Private, Group, Channel).
-  - **Chat Feed**: Markdown and fenced code syntax highlighting, reply chains (`↱`), pagination banner for older messages (`Ctrl+O`), and read-only channel protection.
+  - **Chat Feed**: Markdown and fenced code syntax highlighting, reply chains (`↱`), read-only channel protection, and history that loads itself as you scroll up — anchored so the message you are reading stays put, with batches that grow while you outrun them.
   - **Composer**: Expandable multiline editor (`Alt+Enter` for newline, `Ctrl+G` to toggle height) with active reply indicators.
 - **Vim-Centric Navigation**: Smooth navigation with `j`/`k`, `gg`/`G`, in-chat search (`/` and `n`/`N`), and instant quote replies (`r`).
 - **Dual Engine Architecture**:
@@ -161,7 +161,7 @@ Telegram TUI is built for speed and fully navigable without a mouse.
 | `z` | Expand / collapse an inline photo |
 | `o` | Open the attachment externally — video and GIF in `mpv` (GIFs looped), music without a video window, photos in an image viewer, anything else via `xdg-open` |
 | `1` – `5` | Add quick reaction (👍, ❤️, 🔥, 🎉, 🤔) |
-| `Ctrl+O` | Load older message history from server |
+| `Ctrl+O` | Load older history now (it also loads itself as you scroll up) |
 | `/` | Search inside current chat feed |
 | `n` / `N` | Jump to next / previous search match in feed |
 
@@ -228,7 +228,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**253 tests** passing across all subsystems:
+**260 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

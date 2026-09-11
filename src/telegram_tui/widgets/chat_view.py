@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from time import monotonic
 
 from rich.markup import escape
 from rich.syntax import Syntax as RichSyntax
@@ -269,7 +270,6 @@ class ChatView(VerticalScroll):
         Binding("o", "app_open_media", "Open media"),
         Binding("z", "toggle_photo", "Zoom photo", show=False),
         Binding("/", "app_find", "Find in chat"),
-        Binding("ctrl+o", "load_older", "Load history", priority=True),
         Binding("n", "next_hit", show=False),
         Binding("N", "prev_hit", show=False),
         *[
@@ -282,6 +282,16 @@ class ChatView(VerticalScroll):
     ChatView { height: 1fr; padding: 0 1; background: #1a1b26; }
     """
 
+    #: Start fetching once the viewport comes this close to the top, so the
+    #: round trip happens while there is still something to read.
+    PREFETCH_ROWS = 12
+    #: History arrives in batches. Scrolling faster than they arrive asks for
+    #: bigger ones, so a long scroll back costs fewer round trips.
+    BATCH_MIN = 30
+    BATCH_MAX = 120
+    #: Two loads closer together than this mean the reader is outrunning us.
+    BATCH_GROW_WITHIN = 2.0
+
     def __init__(self, engine) -> None:  # noqa: ANN001 - avoids circular import
         super().__init__(id="messages")
         self.engine = engine
@@ -289,6 +299,10 @@ class ChatView(VerticalScroll):
         self._selected: int = -1
         self.hits: list[MessageWidget] = []
         self.hit_index: int = -1
+        self._loading_older = False
+        self._history_exhausted = False
+        self._batch = self.BATCH_MIN
+        self._loaded_at = 0.0
 
     # -- content ---------------------------------------------------------------
 
@@ -297,7 +311,10 @@ class ChatView(VerticalScroll):
         self.remove_children()
         self.hits = []
         self.hit_index = -1
-        self.mount(Static("⬆ Load older messages (Ctrl+O)", classes="load-older"))
+        self._loading_older = False
+        self._history_exhausted = False
+        self._batch = self.BATCH_MIN
+        self.mount(Static(self._BANNER_IDLE, classes="load-older"))
         for message in self.engine.history(chat.id):
             self.mount(self._make_message_widget(message))
         # Freshly mounted widgets have no height until the next refresh, so
@@ -309,30 +326,89 @@ class ChatView(VerticalScroll):
         self.select(len(self._widgets()) - 1)
         self.scroll_end(animate=False, force=True)
 
+    _BANNER_IDLE = "⬆ Older messages load as you scroll up (Ctrl+O forces it)"
+    _BANNER_BUSY = "⬆ Loading older messages…"
+    _BANNER_DONE = "⬆ Beginning of the conversation"
+
+    def _set_banner(self, text: str) -> None:
+        banner = self.query(".load-older")
+        if banner:
+            banner.first(Static).update(text)
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        super().watch_scroll_y(old_value, new_value)
+        # Only chasing the top; scrolling down never needs more history.
+        if new_value < old_value:
+            self._maybe_load_older()
+
+    def _maybe_load_older(self) -> None:
+        """Fetch more as the top approaches, before the reader gets there."""
+        if self._loading_older or self._history_exhausted or self.chat_id is None:
+            return
+        if self.scroll_offset.y > self.PREFETCH_ROWS:
+            return
+        self.run_worker(self.load_older(), group="history")
+
+    def _next_batch(self) -> int:
+        """Grow the batch while loads keep coming faster than they are read."""
+        now = monotonic()
+        if now - self._loaded_at <= self.BATCH_GROW_WITHIN:
+            self._batch = min(self.BATCH_MAX, self._batch * 2)
+        else:
+            self._batch = self.BATCH_MIN
+        self._loaded_at = now
+        return self._batch
+
     async def action_load_older(self) -> None:
-        if not self.chat_id:
+        await self.load_older()
+
+    async def load_older(self) -> None:
+        """Prepend a batch of older messages without moving what is on screen."""
+        if not self.chat_id or self._loading_older:
             return
         widgets = self._widgets()
         if not widgets:
             return
-        oldest_id = widgets[0].message.id
+
+        self._loading_older = True
+        self._set_banner(self._BANNER_BUSY)
         try:
-            older = await self.engine.fetch_more_history(self.chat_id, offset_id=oldest_id)
-        except Exception as exc:
+            older = await self.engine.fetch_more_history(
+                self.chat_id, offset_id=widgets[0].message.id, limit=self._next_batch()
+            )
+        except Exception as exc:  # noqa: BLE001 - the reason belongs on screen
+            self._set_banner(self._BANNER_IDLE)
             self.app.notify(f"Failed to load history: {exc}", severity="error")
             return
-        if older:
-            banners = self.query(".load-older")
-            banner = banners.first() if banners else None
-            for m in reversed(older):
-                w = self._make_message_widget(m)
-                if banner:
-                    self.mount(w, after=banner)
-                else:
-                    self.mount(w)
-            self.app.notify(f"Loaded {len(older)} older messages", timeout=2)
+        finally:
+            self._loading_older = False
+
+        if not older:
+            self._history_exhausted = True
+            self._set_banner(self._BANNER_DONE)
+            return
+
+        # Anchor the view: the content above grows, so the viewport has to move
+        # down by exactly as much or the reader is thrown back to the top.
+        anchor_y = self.scroll_offset.y
+        height_before = self.max_scroll_y
+
+        banners = self.query(".load-older")
+        banner = banners.first() if banners else None
+        new_widgets = [self._make_message_widget(m) for m in older]
+        if banner is not None:
+            await self.mount_all(new_widgets, after=banner)
         else:
-            self.app.notify("You have reached the beginning of chat history", timeout=2)
+            await self.mount_all(new_widgets)
+        self._selected += len(new_widgets)
+        self._set_banner(self._BANNER_IDLE)
+
+        def keep_the_reader_in_place() -> None:
+            grew_by = self.max_scroll_y - height_before
+            if grew_by > 0:
+                self.scroll_to(y=anchor_y + grew_by, animate=False)
+
+        self.call_after_refresh(keep_the_reader_in_place)
 
     def append_message(self, message: Message, scroll: bool = True) -> MessageWidget:
         """Add a message to the feed, following it only if the user is already

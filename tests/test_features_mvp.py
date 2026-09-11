@@ -106,17 +106,13 @@ async def test_rich_media_rendering_in_chat_view():
         await pilot.pause()
 
         view = app.query_one(ChatView)
-        widgets = view._widgets()
-        assert len(widgets) == 4
+        # Older history can load itself in, so find each message by its id.
+        by_id = {w.message.id: w for w in view._widgets()}
 
-        # Sticker message has .msg-sticker
-        assert widgets[0].query(".msg-sticker")
-        # Video note has .msg-video
-        assert widgets[1].query(".msg-video")
-        # Voice message has .msg-voice
-        assert widgets[2].query(".msg-voice")
-        # Reactions has .msg-reactions
-        assert widgets[3].query(".msg-reactions")
+        assert by_id[1].query(".msg-sticker")
+        assert by_id[2].query(".msg-video")
+        assert by_id[3].query(".msg-voice")
+        assert by_id[4].query(".msg-reactions")
 
 
 @pytest.mark.asyncio

@@ -482,7 +482,10 @@ class TelethonBackend(BaseBackend):
                 self.messages[chat_id] = list(reversed(new_msgs)) + self.messages.get(chat_id, [])
             return new_msgs
         except Exception:
-            return []
+            # Swallowing this told the reader they had reached the beginning of
+            # the conversation, whatever had actually gone wrong.
+            _log.warning("Could not fetch older history for chat %s", chat_id, exc_info=True)
+            raise
 
     async def add_reaction(self, chat_id: int, message_id: int, emoji: str) -> None:
         entity = self._entities.get(chat_id)

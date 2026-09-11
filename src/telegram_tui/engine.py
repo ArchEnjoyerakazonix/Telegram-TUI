@@ -23,6 +23,9 @@ TICK_INCOMING_PROBABILITY = 0.55
 AUTO_REPLY_PROBABILITY = 0.8
 AUTO_REPLY_DELAY_RANGE = (2.0, 5.0)
 
+#: Older messages each mock chat can still produce before the history ends.
+BACKLOG_PER_CHAT = 60
+
 CODE_SNIPPETS = [
     (
         "python",
@@ -114,6 +117,8 @@ class MockEngine(BaseBackend):
         self._next_id = 1
         self._media_dir = Path(tempfile.gettempdir()) / "telegram-tui-media"
         self._media_dir.mkdir(exist_ok=True)
+        #: How much older history each chat still has left to hand out.
+        self._backlog: dict[int, int] = {}
         self._build_fixture()
 
     # -- id helpers ---------------------------------------------------------
@@ -463,11 +468,18 @@ class MockEngine(BaseBackend):
         return self._incoming(chat_id, sender_id, self._rng.choice(INCOMING_TEXTS))
 
     async def fetch_more_history(self, chat_id: int, offset_id: int, limit: int = 30) -> list[Message]:
-        """Generate older historical messages preceding offset_id."""
+        """Older messages preceding offset_id, from a finite backlog.
+
+        The backlog runs out, the way a real conversation does, so reaching the
+        beginning is something the client can actually be shown doing.
+        """
         if chat_id not in self.messages or not self.messages[chat_id]:
             return []
+        remaining = self._backlog.get(chat_id, BACKLOG_PER_CHAT)
+        if remaining <= 0:
+            return []
+
         oldest = self.messages[chat_id][0]
-        older_msgs: list[Message] = []
         texts = [
             "Earlier we discussed the message queue architecture and terminal resize.",
             "Benchmarked parser throughput: 3x speed improvement.",
@@ -476,18 +488,21 @@ class MockEngine(BaseBackend):
             "Continuing with the release roadmap items.",
         ]
         members = [uid for uid in self.members.get(chat_id, [])] or [self.me.id]
-        for i in range(min(5, limit)):
-            msg_id = oldest.id - 100 + i
-            dt_past = oldest.timestamp - dt.timedelta(minutes=60 - i * 10)
-            sender_id = members[i % len(members)]
-            m = Message(
-                id=msg_id,
-                chat_id=chat_id,
-                sender_id=sender_id,
-                text=texts[i % len(texts)],
-                timestamp=dt_past,
+        count = max(1, min(limit, remaining))
+        older_msgs: list[Message] = []
+        for i in range(count):
+            # Ids and timestamps descend away from the oldest message we have.
+            step = count - i
+            older_msgs.append(
+                Message(
+                    id=oldest.id - step,
+                    chat_id=chat_id,
+                    sender_id=members[i % len(members)],
+                    text=texts[i % len(texts)],
+                    timestamp=oldest.timestamp - dt.timedelta(minutes=step),
+                )
             )
-            older_msgs.append(m)
+        self._backlog[chat_id] = remaining - count
         self.messages[chat_id] = older_msgs + self.messages[chat_id]
         return older_msgs
 

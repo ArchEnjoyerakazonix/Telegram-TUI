@@ -247,18 +247,20 @@ async def test_vim_navigation_selects_messages(app):
     view = app.query_one(ChatView)
     view.action_sel_first()
     await pilot.pause()
-    widgets = view._widgets()
-    assert widgets[0].has_class("-selected")
+
+    # Reaching the top can pull in older history, which shifts every index, so
+    # track the messages themselves.
+    first = view.selected_message().id
     await pilot.press("j")
     await pilot.pause()
-    assert widgets[1].has_class("-selected")
-    assert not widgets[0].has_class("-selected")
+    second = view.selected_message().id
+    assert second != first
     await pilot.press("k")
     await pilot.pause()
-    assert widgets[0].has_class("-selected")
+    assert view.selected_message().id == first
     await pilot.press("G")
     await pilot.pause()
-    assert widgets[-1].has_class("-selected")
+    assert view._widgets()[-1].has_class("-selected")
 
 
 # -- reply by 'r' ------------------------------------------------------------
@@ -414,8 +416,14 @@ async def test_incoming_message_keeps_the_feed_at_the_bottom(app):
 async def test_incoming_message_does_not_yank_a_reader_of_scrollback(app):
     app, pilot = app
     view = await _open_chat_with_history(app, pilot)
+
+    async def no_more_history(chat_id, offset_id, limit=30):
+        return []  # this test is about new messages, not about older ones
+
+    app.engine.fetch_more_history = no_more_history
     view.scroll_to(y=0, animate=False)
-    await pilot.pause()
+    for _ in range(4):
+        await pilot.pause(0.05)
     assert view.scroll_y == 0
 
     app._ingest(app.engine.inject_incoming(view.chat_id))
@@ -766,3 +774,141 @@ async def test_escape_still_leaves_the_chat_when_nothing_is_downloading():
         await pilot.pause()
 
         assert isinstance(app.focused, ChatList)
+
+
+# -- history that loads itself ----------------------------------------------
+
+
+async def _feed_scrolled_to_top(app, pilot):
+    view = app.query_one(ChatView)
+    view.focus()
+    for _ in range(4):
+        await pilot.pause(0.05)
+    view.scroll_to(y=0, animate=False)
+    for _ in range(10):
+        await pilot.pause(0.05)
+    return view
+
+
+async def test_scrolling_up_loads_older_messages_without_asking(app):
+    app, pilot = app
+    view = app.query_one(ChatView)
+    before = len(view._widgets())
+
+    await _feed_scrolled_to_top(app, pilot)
+
+    assert len(view._widgets()) > before
+
+
+async def test_the_reader_stays_on_the_same_message(app):
+    """Prepending grows the content above, so the viewport has to follow it."""
+    app, pilot = app
+    view = await _feed_scrolled_to_top(app, pilot)  # let the first load settle
+
+    top_message = view._widgets()[0].message.id
+    anchor = view.scroll_offset.y
+    height_before = view.max_scroll_y
+
+    await view.load_older()
+    for _ in range(8):
+        await pilot.pause(0.05)
+
+    grew_by = view.max_scroll_y - height_before
+    assert grew_by > 0, "nothing was loaded, so there is nothing to test"
+    assert abs(view.scroll_offset.y - (anchor + grew_by)) <= 1, (
+        "the view was thrown off the message being read"
+    )
+    assert any(w.message.id == top_message for w in view._widgets()), (
+        "the message being read disappeared"
+    )
+
+
+async def test_selection_follows_its_message_when_history_is_prepended(app):
+    app, pilot = app
+    view = app.query_one(ChatView)
+    for _ in range(4):
+        await pilot.pause(0.05)
+    view.select(0)
+    selected = view.selected_message().id
+
+    await _feed_scrolled_to_top(app, pilot)
+
+    assert view.selected_message().id == selected
+
+
+async def test_only_one_load_runs_at_a_time(app):
+    app, pilot = app
+    view = app.query_one(ChatView)
+    for _ in range(4):
+        await pilot.pause(0.05)
+
+    calls = []
+    original = app.engine.fetch_more_history
+
+    async def counting(chat_id, offset_id, limit=30):
+        calls.append(limit)
+        await asyncio.sleep(0.05)
+        return await original(chat_id, offset_id, limit)
+
+    app.engine.fetch_more_history = counting
+    for _ in range(5):          # five scroll events in a row
+        view.scroll_to(y=0, animate=False)
+        await pilot.pause(0.01)
+    for _ in range(10):
+        await pilot.pause(0.05)
+
+    assert len(calls) <= 2, f"a burst of scrolling started {len(calls)} loads"
+
+
+async def test_reaching_the_beginning_stops_the_requests(app):
+    app, pilot = app
+    view = await _feed_scrolled_to_top(app, pilot)
+    for _ in range(6):
+        view.scroll_to(y=0, animate=False)
+        for _ in range(8):
+            await pilot.pause(0.05)
+        if view._history_exhausted:
+            break
+
+    assert view._history_exhausted, "the mock backlog should have run out"
+    calls = []
+    app.engine.fetch_more_history = lambda *a, **k: calls.append(1)
+    view.scroll_to(y=0, animate=False)
+    for _ in range(6):
+        await pilot.pause(0.05)
+
+    assert calls == [], "nothing more to fetch, so nothing should be asked for"
+
+
+async def test_batches_grow_while_the_reader_outruns_them(app):
+    app, pilot = app
+    view = app.query_one(ChatView)
+    for _ in range(4):
+        await pilot.pause(0.05)
+    assert view._batch == ChatView.BATCH_MIN
+
+    first = view._next_batch()
+    second = view._next_batch()      # immediately after, so the reader is fast
+
+    assert first == ChatView.BATCH_MIN
+    assert second > first and second <= ChatView.BATCH_MAX
+
+
+async def test_a_failed_load_says_so_instead_of_claiming_the_end(app):
+    app, pilot = app
+    view = app.query_one(ChatView)
+    for _ in range(4):
+        await pilot.pause(0.05)
+
+    async def broken(chat_id, offset_id, limit=30):
+        raise ConnectionError("Disconnected")
+
+    app.engine.fetch_more_history = broken
+    notices: list[str] = []
+    app.notify = lambda msg, *a, **k: notices.append(str(msg))
+
+    await view.load_older()
+    await pilot.pause()
+
+    assert any("Failed to load history" in n for n in notices), notices
+    assert view._history_exhausted is False, "a dropped connection is not the end of history"
