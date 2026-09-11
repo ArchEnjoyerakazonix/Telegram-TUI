@@ -1053,12 +1053,12 @@ async def test_video_summary_ignores_a_machine_generated_name(make_backend):
     """Telegram shows no filename for a video, and a bot's is pure noise."""
     backend = make_backend()
     tm = _media_message(
-        "video", name="7683072658434526482@uasaverbot.mp4", size=1038336, duration=15
+        "video", name="1234567890123456789@downloaderbot.mp4", size=1038336, duration=15
     )
 
     msg = await backend._map_message(tm, 1)
 
-    assert msg.file_name == "7683072658434526482@uasaverbot.mp4"  # kept for downloads
+    assert msg.file_name == "1234567890123456789@downloaderbot.mp4"  # kept for downloads
     assert msg.media_summary() == "🎬 Video · 0:15 · 1014 KB"
 
 

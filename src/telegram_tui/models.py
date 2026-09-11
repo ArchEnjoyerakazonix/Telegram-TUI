@@ -116,7 +116,7 @@ class Message(BaseModel):
 
         Only files whose name carries meaning are named. Telegram itself shows
         no filename for a video, and a bot's is noise like
-        "7683072658434526482@uasaverbot.mp4"; what you want to know is that it
+        "1234567890123456789@downloaderbot.mp4"; what you want to know is that it
         is a video, and how long it runs.
         """
         if self.media_type == "text":
