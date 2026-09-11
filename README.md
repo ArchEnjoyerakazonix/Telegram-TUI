@@ -4,7 +4,7 @@
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 196 Passed](https://img.shields.io/badge/tests-196%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 212 Passed](https://img.shields.io/badge/tests-212%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -159,7 +159,7 @@ Telegram TUI is built for speed and fully navigable without a mouse.
 | `v` | Play voice note or open video note in `mpv` |
 | `s` | Stop background audio playback |
 | `z` | Expand / collapse an inline photo |
-| `o` | Open photo/video in external viewer or `mpv` PIP |
+| `o` | Open the attachment externally — video and GIF in `mpv` (GIFs looped), music without a video window, photos in an image viewer, anything else via `xdg-open` |
 | `1` – `5` | Add quick reaction (👍, ❤️, 🔥, 🎉, 🤔) |
 | `Ctrl+O` | Load older message history from server |
 | `/` | Search inside current chat feed |
@@ -224,7 +224,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**196 tests** passing across all subsystems:
+**212 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

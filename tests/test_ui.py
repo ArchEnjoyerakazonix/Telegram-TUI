@@ -637,3 +637,43 @@ async def test_a_frameless_video_hides_the_widget_rather_than_apologising():
 
         frames = [w for w in app.query(PhotoWidget) if w._thumbnail]
         assert frames and frames[-1].display is False
+
+
+@pytest.mark.parametrize(
+    "media_type", ["photo", "video", "gif", "audio", "document", "video_note", "voice"]
+)
+async def test_pressing_o_hands_every_media_kind_to_a_program(media_type):
+    """Nothing openable may be a dead end in the feed."""
+    from unittest.mock import MagicMock, patch
+
+    engine = MockEngine(seed=5)
+    chat_id = next(iter(engine.chats))
+    engine.messages[chat_id].clear()
+    message = engine._msg(
+        chat_id,
+        engine.members[chat_id][0],
+        "",
+        media_type=media_type,
+        duration=11,
+        has_photo=media_type == "photo",
+        has_voice=media_type == "voice",
+    )
+    message.file_name = "report.pdf" if media_type == "document" else None
+
+    app = TelegramTUI(engine=engine, live_traffic=False)
+    app.notify = lambda *a, **k: None
+    with patch("subprocess.Popen") as popen:
+        popen.return_value = MagicMock()
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.open_chat(chat_id, force=True)
+            for _ in range(6):
+                await pilot.pause(0.05)
+            view = app.query_one(ChatView)
+            view.focus()
+            view.select(0)
+            await pilot.pause()
+            await pilot.press("o")
+            for _ in range(6):
+                await pilot.pause(0.05)
+
+    assert popen.called, f"{media_type} was not handed to any program"

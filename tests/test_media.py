@@ -204,3 +204,61 @@ def test_expanding_makes_a_photo_bigger_in_both_directions(tmp_path):
     expanded = rendered_size(portrait, EXPANDED_COLS, EXPANDED_ROWS)
 
     assert expanded[0] > compact[0] and expanded[1] > compact[1]
+
+
+# -- external players --------------------------------------------------------
+
+
+def launched_command(path, **kwargs):
+    """The command open_external_media would spawn for this file."""
+    from unittest.mock import MagicMock, patch
+
+    from telegram_tui.media import open_external_media
+
+    with patch("subprocess.Popen") as popen:
+        popen.return_value = MagicMock()
+        with patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"):
+            open_external_media(path, **kwargs)
+        return popen.call_args[0][0] if popen.call_args else None
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("clip.mp4", "mpv"),
+        ("clip.mkv", "mpv"),
+        ("song.mp3", "mpv"),
+        ("voice.ogg", "mpv"),
+        ("photo.jpg", "imv"),
+        ("report.pdf", "xdg-open"),
+        ("archive.zip", "xdg-open"),
+    ],
+)
+def test_every_attachment_type_reaches_some_player(tmp_path, name, expected):
+    """Media that cannot render in the terminal still has to open somewhere."""
+    target = tmp_path / name
+    target.write_bytes(b"x")
+
+    assert launched_command(target)[0] == expected
+
+
+def test_animations_are_looped(tmp_path):
+    """A Telegram GIF is a two-second mp4; played once it just flashes past."""
+    gif = tmp_path / "meme.gif"
+    gif.write_bytes(b"x")
+    assert "--loop" in launched_command(gif)
+
+    mp4 = tmp_path / "clip.mp4"
+    mp4.write_bytes(b"x")
+    assert "--loop" in launched_command(mp4, loop=True)
+    assert "--loop" not in launched_command(mp4, loop=False)
+
+
+def test_audio_opens_without_a_video_window(tmp_path):
+    song = tmp_path / "song.flac"
+    song.write_bytes(b"x")
+
+    command = launched_command(song)
+
+    assert "--no-video" in command
+    assert "--geometry=480x480" not in command

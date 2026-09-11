@@ -600,7 +600,7 @@ class TelegramTUI(App[None]):
             finally:
                 self._clear_typing()
             if path and path.exists():
-                open_external_media(path)
+                open_external_media(path, loop=message.media_type == "gif")
                 self.notify(f"▶ Opening {path.name}")
             else:
                 self.notify("Media file unavailable", severity="error")

@@ -203,8 +203,13 @@ def format_waveform(waveform: bytes | list[int] | None, width: int = 20) -> str:
     return "".join(chars)
 
 
-def open_external_media(path: Path | str) -> subprocess.Popen | None:
-    """Open media in native desktop viewer (imv, swayimg, feh, mpv, or xdg-open)."""
+def open_external_media(path: Path | str, loop: bool = False) -> subprocess.Popen | None:
+    """Open media in a native desktop viewer (mpv, imv, swayimg, feh, xdg-open).
+
+    ``loop`` replays the file until the window is closed, which is what makes a
+    GIF feel like a GIF — Telegram stores them as short silent mp4s that would
+    otherwise flash by once.
+    """
     try:
         p = Path(path)
         if not p.is_file():
@@ -214,13 +219,22 @@ def open_external_media(path: Path | str) -> subprocess.Popen | None:
 
     suffix = p.suffix.lower()
     is_video = suffix in (".mp4", ".mkv", ".webm", ".avi", ".mov")
-    is_image = suffix in (".png", ".jpg", ".jpeg", ".webp", ".gif")
+    is_image = suffix in (".png", ".jpg", ".jpeg", ".webp")
+    is_audio = suffix in (".mp3", ".flac", ".ogg", ".oga", ".opus", ".m4a", ".wav", ".aac")
+    if suffix == ".gif":
+        # An animated file in a still viewer is just a frozen frame.
+        is_video, loop = True, True
 
     candidates: list[list[str]] = []
-    if is_video:
-        candidates.append(
-            ["mpv", "--autofit=480x480", "--geometry=480x480", "--title=Telegram Video", "--really-quiet", str(p)]
-        )
+    if is_video or is_audio:
+        player = ["mpv", "--really-quiet"]
+        if is_audio:
+            player.append("--no-video")
+        else:
+            player += ["--autofit=480x480", "--geometry=480x480", "--title=Telegram Video"]
+        if loop:
+            player.append("--loop")
+        candidates.append([*player, str(p)])
         candidates.append(["xdg-open", str(p)])
     elif is_image:
         for v in ("imv", "swayimg", "feh", "sxiv", "eog"):
