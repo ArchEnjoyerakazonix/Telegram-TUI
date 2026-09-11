@@ -98,6 +98,15 @@ def _as_int(value) -> int | None:
     return value
 
 
+def _as_seconds(value) -> int | None:
+    """Durations arrive as floats (DocumentAttributeVideo.duration is a double)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value in (float("inf"), float("-inf")) or value < 0:
+        return None
+    return round(value)
+
+
 def _media_type(tm) -> str:
     """Map a Telethon message onto one of our media_type slugs."""
     for prop in _MEDIA_PROPS:
@@ -290,7 +299,7 @@ class TelethonBackend(BaseBackend):
         if tm_file is not None:
             file_size = _as_int(getattr(tm_file, "size", None))
             mime_type = _as_str(getattr(tm_file, "mime_type", None))
-            duration = _as_int(getattr(tm_file, "duration", None))
+            duration = _as_seconds(getattr(tm_file, "duration", None))
             if media_type in ("document", "video", "audio", "gif"):
                 file_name = _as_str(getattr(tm_file, "name", None))
             if media_type == "audio" and not file_name:

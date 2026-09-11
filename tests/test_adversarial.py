@@ -1023,3 +1023,55 @@ async def test_download_progress_is_reported(make_backend):
     await backend.fetch_file(msg, progress=lambda got, total: seen.append((got, total)))
 
     assert seen == [(512, 1024)]
+
+
+@pytest.mark.asyncio
+async def test_map_message_accepts_float_durations(make_backend):
+    """DocumentAttributeVideo.duration is a double, so a strict int check ate it."""
+    backend = make_backend()
+    tm = _media_message("video", size=1038336, duration=15.4)
+
+    msg = await backend._map_message(tm, 1)
+
+    assert msg.duration == 15
+    assert msg.media_summary() == "🎬 Video · 0:15 · 1014 KB"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("junk", [float("nan"), float("inf"), -3, "12", True])
+async def test_map_message_rejects_impossible_durations(make_backend, junk):
+    backend = make_backend()
+    tm = _media_message("video", size=100, duration=junk)
+
+    msg = await backend._map_message(tm, 1)
+
+    assert msg.duration is None
+
+
+@pytest.mark.asyncio
+async def test_video_summary_ignores_a_machine_generated_name(make_backend):
+    """Telegram shows no filename for a video, and a bot's is pure noise."""
+    backend = make_backend()
+    tm = _media_message(
+        "video", name="7683072658434526482@uasaverbot.mp4", size=1038336, duration=15
+    )
+
+    msg = await backend._map_message(tm, 1)
+
+    assert msg.file_name == "7683072658434526482@uasaverbot.mp4"  # kept for downloads
+    assert msg.media_summary() == "🎬 Video · 0:15 · 1014 KB"
+
+
+@pytest.mark.asyncio
+async def test_long_document_names_are_elided(make_backend):
+    from telegram_tui.models import MAX_FILE_NAME
+
+    backend = make_backend()
+    long_name = "a-really-long-generated-export-filename-2026-09-11-final.csv"
+    tm = _media_message("document", name=long_name, size=1234)
+
+    summary = (await backend._map_message(tm, 1)).media_summary()
+
+    assert summary.startswith(long_name[:10])
+    assert "…" in summary
+    assert len(summary.split(" · ")[0]) <= MAX_FILE_NAME

@@ -60,6 +60,14 @@ def media_label(media_type: str, sticker_emoji: str | None = None) -> str:
     return label
 
 
+#: Media whose file name is the useful label. For everything else the kind of
+#: media and its length say more than the name Telegram happened to store.
+NAMED_MEDIA = frozenset({"document", "audio"})
+
+#: File names longer than this are elided in the feed.
+MAX_FILE_NAME = 44
+
+
 def format_size(size: int | None) -> str:
     """Byte count as a short human string: 812 B, 480 KB, 12.4 MB, 1.3 GB."""
     if not isinstance(size, int) or isinstance(size, bool) or size < 0:
@@ -104,10 +112,22 @@ class Message(BaseModel):
     mime_type: str | None = None
 
     def media_summary(self) -> str:
-        """One line describing the attachment: name, then duration, then size."""
+        """One line describing the attachment: what it is, how long, how big.
+
+        Only files whose name carries meaning are named. Telegram itself shows
+        no filename for a video, and a bot's is noise like
+        "7683072658434526482@uasaverbot.mp4"; what you want to know is that it
+        is a video, and how long it runs.
+        """
         if self.media_type == "text":
             return ""
-        parts = [self.file_name or media_label(self.media_type, self.sticker_emoji)]
+        if self.media_type in NAMED_MEDIA and self.file_name:
+            head = self.file_name
+            if len(head) > MAX_FILE_NAME:
+                head = head[: MAX_FILE_NAME - 1] + "…"
+        else:
+            head = media_label(self.media_type, self.sticker_emoji)
+        parts = [head]
         duration = format_duration(self.duration)
         if duration:
             parts.append(duration)
