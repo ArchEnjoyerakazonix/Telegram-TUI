@@ -6,6 +6,7 @@ external media launcher resilience, edge-case UI messages, and Telethon errors.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import os
 import subprocess
@@ -761,3 +762,63 @@ async def test_telethon_backend_on_new_message_caches_in_history(make_backend):
     assert any(m.id == 999 for m in backend.messages[42])
     assert backend.history(42)[0].text == "Hello live"
 
+
+
+# ============================================================================
+# 9. Textual's eager task factory vs Telethon's sender
+# ============================================================================
+
+eager_only = pytest.mark.skipif(
+    not hasattr(asyncio, "eager_task_factory"),
+    reason="eager tasks arrived in Python 3.12",
+)
+
+
+@eager_only
+@pytest.mark.asyncio
+async def test_start_restores_the_default_task_factory(make_backend):
+    """Textual's run_async() installs the eager factory, which hangs Telethon."""
+    loop = asyncio.get_running_loop()
+    loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        backend = make_backend()
+        backend._client.connect = AsyncMock()
+        backend._client.is_user_authorized = AsyncMock(return_value=True)
+
+        assert await backend.start() is True
+        assert loop.get_task_factory() is not asyncio.eager_task_factory
+    finally:
+        loop.set_task_factory(None)
+
+
+@eager_only
+@pytest.mark.asyncio
+async def test_eager_tasks_break_the_pattern_telethon_relies_on():
+    """The reason the fix above exists, in nine lines.
+
+    Telethon's MTProtoSender spawns its send and receive loops and only then
+    sets _user_connected = True. Both loops are `while self._user_connected`,
+    so running them eagerly makes them exit before they ever do any work.
+    """
+    loop = asyncio.get_running_loop()
+    ran: list[int] = []
+
+    async def sender_loop(state: dict) -> None:
+        while state["connected"]:
+            ran.append(1)
+            return
+
+    async def connect(state: dict) -> None:
+        loop.create_task(sender_loop(state))  # telethon spawns here...
+        state["connected"] = True  # ... and only then marks itself usable
+        await asyncio.sleep(0)
+
+    loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        await connect({"connected": False})
+        assert ran == [], "eager: the sender loop gives up before it can start"
+    finally:
+        loop.set_task_factory(None)
+
+    await connect({"connected": False})
+    assert ran == [1], "default: the sender loop starts once the flag is set"

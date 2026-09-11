@@ -38,6 +38,25 @@ def _resolve_session_path(session: str) -> str:
     return str(config_dir / p)
 
 
+def _restore_lazy_task_factory() -> None:
+    """Undo Textual's eager task factory for the running loop.
+
+    Textual's ``run_async`` sets ``asyncio.eager_task_factory``, which starts a
+    coroutine synchronously inside ``create_task``. Telethon's sender spawns its
+    send and receive loops *before* setting ``_user_connected = True``, and both
+    loops begin with ``while self._user_connected``. Run eagerly, they therefore
+    see False, return immediately, and every later request waits forever for a
+    reply nobody is left to send or receive — the app hangs on connect with a
+    blank screen. Textual only uses the factory as an optimisation (its own test
+    harness runs without it), so restoring the default is safe.
+    """
+    loop = asyncio.get_running_loop()
+    eager = getattr(asyncio, "eager_task_factory", None)
+    if eager is not None and loop.get_task_factory() is eager:
+        _log.debug("Restoring the default asyncio task factory for Telethon")
+        loop.set_task_factory(None)
+
+
 def _members_label(entity, chat_type: ChatType) -> str:
     """Chat subtitle text; Telethon reports a raw count, the model holds a label."""
     count = getattr(entity, "participants_count", None)
@@ -94,6 +113,7 @@ class TelethonBackend(BaseBackend):
         can report it, because deleting the session there would force a full
         re-login every time the network is down.
         """
+        _restore_lazy_task_factory()
         try:
             await self._client.connect()
             return await self._client.is_user_authorized()
