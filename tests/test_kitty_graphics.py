@@ -134,10 +134,63 @@ def test_ids_stay_inside_the_24_bit_colour_they_travel_in():
         assert 0 < image_id <= 0xFFFFFF
 
 
+def test_ids_start_somewhere_random():
+    """The terminal is shared: starting at 1 would collide with other programs."""
+    starts = {kg.ImageIds().allocate() for _ in range(20)}
+    assert len(starts) > 1
+
+
+# -- the image cache ---------------------------------------------------------
+
+
+def test_a_second_view_of_the_same_image_sends_nothing():
+    """Reopening a chat remounts every photo; re-sending makes kitty re-decode."""
+    cache = kg.ImageCache()
+
+    first_id, first_payload = cache.get("/pic.png", 20, 10)
+    again_id, again_payload = cache.get("/pic.png", 20, 10)
+
+    assert again_id == first_id
+    assert first_payload and again_payload == ""
+
+
+def test_a_different_size_is_a_different_image():
+    cache = kg.ImageCache()
+
+    small, _ = cache.get("/pic.png", 20, 10)
+    large, payload = cache.get("/pic.png", 40, 20)
+
+    assert large != small and payload != ""
+
+
+def test_the_cache_evicts_the_least_recently_used():
+    cache = kg.ImageCache(limit=2)
+
+    first, _ = cache.get("/a.png", 10, 5)
+    cache.get("/b.png", 10, 5)
+    cache.get("/a.png", 10, 5)          # touch a, so b is now the oldest
+    _, payload = cache.get("/c.png", 10, 5)
+
+    assert f"a=d,d=I,i={first}" not in payload, "the freshly used image must survive"
+    assert "a=d,d=I" in payload, "something has to be freed"
+    assert len(cache.live) == 2
+
+
+def test_clearing_frees_every_image():
+    cache = kg.ImageCache()
+    for name in ("a", "b", "c"):
+        cache.get(f"/{name}.png", 10, 5)
+
+    payload = cache.clear()
+
+    assert payload.count("a=d,d=I") == 3
+    assert cache.live == set()
+
+
 # -- the widget picks the right renderer ------------------------------------
 
 
-async def run_with_photo(monkeypatch, supported: bool, release: bool = False) -> dict:
+async def run_with_photo(monkeypatch, supported: bool) -> dict:
     """Open a chat holding a photo and report how the widget rendered it."""
     from telegram_tui.app import TelegramTUI
     from telegram_tui.engine import MockEngine
@@ -155,10 +208,7 @@ async def run_with_photo(monkeypatch, supported: bool, release: bool = False) ->
         for _ in range(10):
             await pilot.pause(0.05)
         widget = app.query(PhotoWidget).first()
-        image_id = widget._kitty_id
-        if release:
-            widget._release_kitty_image()
-        return {"image_id": image_id, "sent": sent, "live": set(kg.IMAGE_IDS.live)}
+        return {"image_id": widget._kitty_id, "sent": sent, "live": set(kg.IMAGES.live)}
 
 
 async def test_kitty_terminals_get_real_pixels(monkeypatch):
@@ -174,12 +224,16 @@ async def test_other_terminals_fall_back_to_characters(monkeypatch):
     result = await run_with_photo(monkeypatch, supported=False)
 
     assert result["image_id"] is None
-    assert result["sent"] == [], "nothing may be written to a terminal that cannot show it"
+    assert not any(result["sent"]), (
+        "nothing may be written to a terminal that cannot show it"
+    )
 
 
-async def test_releasing_a_photo_frees_the_image(monkeypatch):
-    result = await run_with_photo(monkeypatch, supported=True, release=True)
-    image_id = result["image_id"]
+async def test_the_app_hands_the_terminal_its_memory_back_on_exit(monkeypatch):
+    """Images live in the terminal, not in this process, so exiting must free them."""
+    result = await run_with_photo(monkeypatch, supported=True)
 
-    assert any(f"a=d,d=I,i={image_id}" in payload for payload in result["sent"])
-    assert image_id not in kg.IMAGE_IDS.live
+    assert result["image_id"] in result["live"]
+    assert any("a=d,d=I" in payload for payload in result["sent"]), (
+        "the app clears the cache as it unmounts"
+    )

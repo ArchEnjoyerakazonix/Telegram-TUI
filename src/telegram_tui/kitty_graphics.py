@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import base64
 import os
+import random
 import shutil
 import subprocess
+from collections import OrderedDict
 from pathlib import Path
 
 from rich.style import Style
@@ -166,10 +168,15 @@ def as_png(source: Path | str, target: Path) -> Path | None:
 
 
 class ImageIds:
-    """Hands out image ids and remembers which are still on the terminal."""
+    """Hands out image ids and remembers which are still on the terminal.
 
-    def __init__(self) -> None:
-        self._next = _FIRST_ID
+    Ids are shared by everything drawing in this terminal window, so the run
+    starts at a random point rather than at 1: another program's images would
+    otherwise be overwritten by ours, and ours by theirs.
+    """
+
+    def __init__(self, start: int | None = None) -> None:
+        self._next = start if start is not None else random.randint(_FIRST_ID, _LAST_ID)
         self.live: set[int] = set()
 
     def allocate(self) -> int:
@@ -182,8 +189,51 @@ class ImageIds:
         self.live.discard(image_id)
 
 
-#: Ids are a terminal-wide resource, so they are handed out in one place.
-IMAGE_IDS = ImageIds()
+class ImageCache:
+    """Keeps transmitted images on the terminal so a remount costs nothing.
+
+    Reopening a chat rebuilds its message widgets, and re-sending every photo
+    makes the terminal decode them all again. Images stay until the cache is
+    full, then the least recently used are dropped.
+    """
+
+    def __init__(self, limit: int = 64) -> None:
+        self._limit = limit
+        self._ids = ImageIds()
+        self._entries: OrderedDict[tuple[str, int, int], int] = OrderedDict()
+
+    @property
+    def live(self) -> set[int]:
+        return self._ids.live
+
+    def get(self, path: Path | str, cols: int, rows: int) -> tuple[int, str]:
+        """The id for this image at this size, and what still has to be sent."""
+        key = (str(path), cols, rows)
+        cached = self._entries.get(key)
+        if cached is not None:
+            self._entries.move_to_end(key)
+            return cached, ""
+
+        image_id = self._ids.allocate()
+        self._entries[key] = image_id
+        payload = transmit(path, image_id, cols, rows)
+        while len(self._entries) > self._limit:
+            _, evicted = self._entries.popitem(last=False)
+            payload += delete(evicted)
+            self._ids.release(evicted)
+        return image_id, payload
+
+    def clear(self) -> str:
+        """Everything needed to hand the terminal's memory back."""
+        payload = "".join(delete(image_id) for image_id in self._entries.values())
+        for image_id in self._entries.values():
+            self._ids.release(image_id)
+        self._entries.clear()
+        return payload
+
+
+#: Ids and images are terminal-wide resources, managed in one place.
+IMAGES = ImageCache()
 
 
 def write_to_terminal(payload: str) -> bool:

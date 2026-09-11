@@ -533,8 +533,13 @@ class TelethonBackend(BaseBackend):
                 return target  # another task fetched it while we waited
             try:
                 result = await tm.download_media(file=str(target), progress_callback=progress)
+            except asyncio.CancelledError:
+                # Whatever arrived is partial, and the cache keys on existence.
+                target.unlink(missing_ok=True)
+                raise
             except Exception:
                 _log.warning("Download failed for message %s", message.id, exc_info=True)
+                target.unlink(missing_ok=True)
                 return None
             return Path(result) if result else None
 
@@ -565,8 +570,12 @@ class TelethonBackend(BaseBackend):
             try:
                 # thumb=-1 asks for the largest thumbnail Telegram kept.
                 result = await tm.download_media(file=str(target), thumb=-1)
+            except asyncio.CancelledError:
+                target.unlink(missing_ok=True)
+                raise
             except Exception:
                 _log.debug("No thumbnail for message %s", message.id, exc_info=True)
+                target.unlink(missing_ok=True)
                 return None
             return Path(result) if result else None
 

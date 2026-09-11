@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 
 from textual import on
@@ -13,6 +14,7 @@ from textual.widgets import Footer, Header, Input, ListView, Static
 
 from .auth import LoginScreen, WelcomeScreen
 from .backend import BaseBackend
+from . import kitty_graphics
 from .config import Config
 from .engine import MockEngine
 from .media import VoicePlayer
@@ -122,6 +124,7 @@ class TelegramTUI(App[None]):
         self.current_chat_id: int | None = None
         self._search_query = ""
         self.pending_reply: tuple[int, int] | None = None
+        self._download: asyncio.Task | None = None
         self.voice_player = VoicePlayer(self.config.media_player)
 
     # -- layout ---------------------------------------------------------------
@@ -420,6 +423,8 @@ class TelegramTUI(App[None]):
             return
 
     def action_back_to_list(self) -> None:
+        if self.cancel_download():
+            return
         if len(self.screen_stack) > 1:  # modal is up: Esc cancels it
             if hasattr(self.screen, "action_cancel"):
                 self.screen.action_cancel()
@@ -592,12 +597,23 @@ class TelegramTUI(App[None]):
 
         if message.media_type in OPENABLE_MEDIA:
             label = message.media_summary()
+            if self._download is not None and not self._download.done():
+                self.notify("A download is already running — Esc cancels it", severity="warning")
+                return
+            # Held as a task so Esc can cancel a large file mid-flight.
+            self._download = asyncio.ensure_future(
+                self.engine.fetch_file(message, progress=self._download_progress(label))
+            )
             try:
-                path = await self.engine.fetch_file(message, progress=self._download_progress(label))
+                path = await self._download
+            except asyncio.CancelledError:
+                self.notify("Download cancelled")
+                return
             except Exception as exc:
                 self.notify(f"Failed to load media: {exc}", severity="error")
                 return
             finally:
+                self._download = None
                 self._clear_typing()
             if path and path.exists():
                 open_external_media(path, loop=message.media_type == "gif")
@@ -608,12 +624,19 @@ class TelegramTUI(App[None]):
 
         self.notify("No media files to open on selected message (key: o)", severity="warning")
 
+    def cancel_download(self) -> bool:
+        """Stop a download in flight; True when there was one to stop."""
+        if self._download is None or self._download.done():
+            return False
+        self._download.cancel()
+        return True
+
     def _download_progress(self, label: str):
         """Telethon progress callback that reports into the header subtitle."""
 
         def report(received: int, total: int) -> None:
             if total:
-                self.sub_title = f"⬇ {label} — {received * 100 // total}%"
+                self.sub_title = f"⬇ {label} — {received * 100 // total}%  (Esc cancels)"
 
         return report
 
@@ -622,6 +645,8 @@ class TelegramTUI(App[None]):
 
     def on_unmount(self) -> None:
         self.voice_player.stop()
+        # Images we sent live in the terminal, not in this process.
+        kitty_graphics.write_to_terminal(kitty_graphics.IMAGES.clear())
 
     # -- chat actions ---------------------------------------------------------
 

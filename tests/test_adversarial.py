@@ -1129,3 +1129,51 @@ async def test_missing_thumbnail_is_not_an_error(make_backend):
     backend._tmsg[(1, 2)] = tm
 
     assert await backend.fetch_thumbnail(Message(id=2, chat_id=1, media_type="video")) is None
+
+
+# ============================================================================
+# 12. Cancelling a download
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_download_leaves_no_half_file(make_backend):
+    """The cache keys on the file existing, so a partial one would be served."""
+    backend = make_backend()
+    started = asyncio.Event()
+    tm = MagicMock()
+
+    async def download_media(file, progress_callback=None, thumb=None):
+        Path(file).write_bytes(b"half of a video")  # what a partial transfer leaves
+        started.set()
+        await asyncio.sleep(30)
+        return file
+
+    tm.download_media = download_media
+    backend._tmsg[(1, 2)] = tm
+    message = Message(id=2, chat_id=1, media_type="video")
+
+    task = asyncio.ensure_future(backend.fetch_file(message))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    leftovers = list(backend._media_dir.glob("1_2*"))
+    assert leftovers == [], f"a partial download stayed behind: {leftovers}"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_download_leaves_no_half_file(make_backend):
+    backend = make_backend()
+    tm = MagicMock()
+
+    async def download_media(file, progress_callback=None, thumb=None):
+        Path(file).write_bytes(b"partial")
+        raise ConnectionResetError("the connection dropped")
+
+    tm.download_media = download_media
+    backend._tmsg[(1, 3)] = tm
+
+    assert await backend.fetch_file(Message(id=3, chat_id=1, media_type="video")) is None
+    assert list(backend._media_dir.glob("1_3*")) == []

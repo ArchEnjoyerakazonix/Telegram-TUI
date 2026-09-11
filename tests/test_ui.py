@@ -1,5 +1,7 @@
 """UI tests through textual.pilot: focus, navigation, hotkeys, resize."""
 
+import asyncio
+
 import pytest
 
 from telegram_tui.app import TelegramTUI
@@ -677,3 +679,90 @@ async def test_pressing_o_hands_every_media_kind_to_a_program(media_type):
                 await pilot.pause(0.05)
 
     assert popen.called, f"{media_type} was not handed to any program"
+
+
+# -- cancelling a download --------------------------------------------------
+
+
+async def _app_with_a_slow_download():
+    """An app whose next download never finishes on its own."""
+    engine = MockEngine(seed=5)
+    chat_id = next(iter(engine.chats))
+    engine.messages[chat_id].clear()
+    engine._msg(chat_id, engine.members[chat_id][0], "", media_type="video", duration=30)
+
+    started = asyncio.Event()
+    calls: list[int] = []
+
+    async def slow_fetch(message, progress=None):
+        calls.append(1)
+        started.set()
+        await asyncio.sleep(60)
+
+    engine.fetch_file = slow_fetch
+    notices: list[str] = []
+    app = TelegramTUI(engine=engine, live_traffic=False)
+    app.notify = lambda msg, *a, **k: notices.append(str(msg))
+    return app, chat_id, started, calls, notices
+
+
+async def _select_the_video(app, pilot, chat_id):
+    app.open_chat(chat_id, force=True)
+    for _ in range(6):
+        await pilot.pause(0.05)
+    view = app.query_one(ChatView)
+    view.focus()
+    view.select(0)
+    await pilot.pause()
+
+
+async def test_escape_cancels_a_download_in_flight():
+    """A large file must not hold the client hostage.
+
+    Note this drives the actions directly rather than pressing keys: pilot waits
+    for the app to go idle, which for a running download means waiting for it.
+    """
+    app, chat_id, started, _calls, notices = await _app_with_a_slow_download()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _select_the_video(app, pilot, chat_id)
+
+        app.action_open_media()
+        await asyncio.wait_for(started.wait(), timeout=5)
+        assert app._download is not None and not app._download.done()
+
+        app.action_back_to_list()  # what Esc is bound to
+        await asyncio.sleep(0)
+        assert app._download.cancelled() or app._download.done()
+
+    assert any("cancelled" in n.lower() for n in notices), notices
+
+
+async def test_a_second_open_does_not_start_a_parallel_download():
+    app, chat_id, started, calls, notices = await _app_with_a_slow_download()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _select_the_video(app, pilot, chat_id)
+
+        app.action_open_media()
+        await asyncio.wait_for(started.wait(), timeout=5)
+        app.action_open_media()
+        await asyncio.sleep(0)
+
+        assert len(calls) == 1, "one download at a time"
+        assert any("already running" in n.lower() for n in notices), notices
+        app.cancel_download()
+        await asyncio.sleep(0)
+
+
+async def test_escape_still_leaves_the_chat_when_nothing_is_downloading():
+    """Cancelling must not swallow Esc's normal job."""
+    app, chat_id, _started, _calls, _notices = await _app_with_a_slow_download()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _select_the_video(app, pilot, chat_id)
+        app.query_one(Composer).focus()
+        await pilot.pause()
+
+        assert app.cancel_download() is False
+        app.action_back_to_list()
+        await pilot.pause()
+
+        assert isinstance(app.focused, ChatList)

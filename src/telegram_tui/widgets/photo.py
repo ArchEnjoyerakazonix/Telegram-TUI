@@ -79,28 +79,25 @@ class PhotoWidget(Static):
         size = await loop.run_in_executor(None, kitty_graphics.png_size, png)
         cols, rows = kitty_graphics.fit_cells(size, cols, rows)
 
-        image_id = kitty_graphics.IMAGE_IDS.allocate()
-        sent = await loop.run_in_executor(
-            None, kitty_graphics.write_to_terminal,
-            kitty_graphics.transmit(png, image_id, cols, rows),
-        )
-        if not sent:
-            kitty_graphics.IMAGE_IDS.release(image_id)
-            return False
+        image_id, payload = kitty_graphics.IMAGES.get(png, cols, rows)
+        if payload:
+            sent = await loop.run_in_executor(
+                None, kitty_graphics.write_to_terminal, payload
+            )
+            if not sent:
+                return False
         self._kitty_id = image_id
         self.update(kitty_graphics.placeholder_text(image_id, cols, rows))
         return True
 
     def _release_kitty_image(self) -> None:
-        """Tell the terminal it can drop the picture we were showing."""
-        if self._kitty_id is None:
-            return
-        kitty_graphics.write_to_terminal(kitty_graphics.delete(self._kitty_id))
-        kitty_graphics.IMAGE_IDS.release(self._kitty_id)
-        self._kitty_id = None
+        """Forget our picture without evicting it.
 
-    def on_unmount(self) -> None:
-        self._release_kitty_image()
+        The cache owns an image's life: reopening a chat remounts every message,
+        and dropping the images here would make the terminal decode them all
+        again. They are freed when the cache fills or the app exits.
+        """
+        self._kitty_id = None
 
     def _caption(self) -> str:
         if self._thumbnail:

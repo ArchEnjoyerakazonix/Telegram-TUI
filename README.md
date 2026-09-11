@@ -4,7 +4,7 @@
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 238 Passed](https://img.shields.io/badge/tests-238%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 248 Passed](https://img.shields.io/badge/tests-248%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -136,7 +136,7 @@ Telegram TUI is built for speed and fully navigable without a mouse.
 | `Tab` / `Shift+Tab` | Cycle focus between Panels (Chat List ↔ Feed ↔ Input) |
 | `Ctrl+↑` / `Ctrl+↓` | Switch focus between panels |
 | `Ctrl+Q` | Quit application |
-| `Esc` | Cancel reply, dismiss dialogs, or clear search |
+| `Esc` | Cancel a running download, then reply / dialogs / search |
 
 ### Chat List (Left Panel)
 
@@ -227,7 +227,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**238 tests** passing across all subsystems:
+**248 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

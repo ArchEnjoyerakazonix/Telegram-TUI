@@ -207,7 +207,7 @@ async def test_open_selected_media(monkeypatch):
     engine = MockEngine()
     opened_paths = []
 
-    def fake_open(path):
+    def fake_open(path, loop=False):
         opened_paths.append(path)
         return None
 
