@@ -38,6 +38,7 @@ class VoicePlayer:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
+            start_new_session=True,  # never let a player touch our terminal
         )
 
     def stop(self) -> None:
@@ -83,7 +84,17 @@ def render_photo(
     cmd = [binary, "-s", f"{cols}x{rows}", *detect_photo_format(environ), str(p)]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, timeout=30, check=False
+            cmd,
+            capture_output=True,
+            timeout=30,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            # chafa opens the *controlling* terminal and probes it (OSC 10/11,
+            # CSI 18t/14t/16t, CSI 0c), whatever stdin is. The terminal answers
+            # into the input stream we are reading, and the reply — "^[?62;52;c"
+            # — gets typed into whatever widget has focus. A new session leaves
+            # the child with no controlling terminal to ask.
+            start_new_session=True,
         )
         if result.returncode != 0:
             return None
@@ -253,6 +264,7 @@ def open_external_media(path: Path | str, loop: bool = False) -> subprocess.Pope
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
+                    start_new_session=True,
                 )
             except (subprocess.SubprocessError, OSError):
                 continue

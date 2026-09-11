@@ -262,3 +262,54 @@ def test_audio_opens_without_a_video_window(tmp_path):
 
     assert "--no-video" in command
     assert "--geometry=480x480" not in command
+
+
+# -- keeping spawned tools off our terminal ---------------------------------
+
+
+def test_renderer_is_detached_from_the_controlling_terminal(tmp_path):
+    """chafa probes the controlling terminal whatever stdin is.
+
+    Its queries (OSC 10/11, CSI 18t/14t/16t, CSI 0c) are answered into the
+    input stream the app is reading, and the reply "^[?62;52;c" was typed
+    into the focused widget. A new session leaves nothing to probe.
+    """
+    from unittest.mock import MagicMock, patch
+
+    image = write_mock_photo(tmp_path / "x.png")
+    with patch("subprocess.run") as run:
+        run.return_value = MagicMock(returncode=0, stdout=b"pixels")
+        with patch("shutil.which", return_value="/usr/bin/chafa"):
+            render_photo(image, 44, 18)
+
+    assert run.call_args.kwargs["start_new_session"] is True
+    assert run.call_args.kwargs["stdin"] is subprocess.DEVNULL
+
+
+def test_voice_player_is_detached_from_the_terminal(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    audio = write_mock_voice(tmp_path / "a.wav")
+    with patch("subprocess.Popen") as popen:
+        popen.return_value = MagicMock()
+        with patch("shutil.which", return_value="/usr/bin/mpv"):
+            VoicePlayer("mpv").play(audio)
+
+    assert popen.call_args.kwargs["start_new_session"] is True
+    assert popen.call_args.kwargs["stdin"] is subprocess.DEVNULL
+
+
+def test_external_viewer_is_detached_from_the_terminal(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from telegram_tui.media import open_external_media
+
+    target = tmp_path / "clip.mp4"
+    target.write_bytes(b"x")
+    with patch("subprocess.Popen") as popen:
+        popen.return_value = MagicMock()
+        with patch("shutil.which", side_effect=lambda name: f"/usr/bin/{name}"):
+            open_external_media(target)
+
+    assert popen.call_args.kwargs["start_new_session"] is True
+    assert popen.call_args.kwargs["stdin"] is subprocess.DEVNULL
