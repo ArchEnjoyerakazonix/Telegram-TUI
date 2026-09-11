@@ -235,3 +235,42 @@ async def test_feed_redraws_when_history_arrives_after_login():
 
         assert await wait_until(pilot, lambda: bool(view._widgets()))
         assert view._widgets()[0].message.text == "привет из live"
+
+
+# -- small terminals --------------------------------------------------------
+
+NARROW_SIZES = [(120, 40), (80, 24), (60, 15), (50, 12), (40, 10), (30, 8)]
+
+
+@pytest.mark.parametrize("size", NARROW_SIZES)
+async def test_app_survives_a_narrow_terminal(size):
+    """A fixed-width sidebar used to squeeze the composer to zero and crash."""
+    app = make_app(FakeLiveBackend())
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        assert app.is_running
+
+
+@pytest.mark.parametrize("size", NARROW_SIZES)
+async def test_login_box_stays_on_screen(size):
+    """The login dialog used to be 70 columns wide whatever the terminal was."""
+    app = make_app(FakeLiveBackend())
+    async with app.run_test(size=size) as pilot:
+        assert await wait_until(pilot, lambda: bool(app.screen.query("#auth-box")))
+        box = app.screen.query_one("#auth-box")
+        assert box.region.x >= 0 and box.region.y >= 0
+        assert box.region.right <= size[0]
+        assert box.region.bottom <= size[1]
+
+
+async def test_login_dialog_fits_entirely_at_standard_size():
+    """At 80x24 every control must be visible without scrolling."""
+    app = make_app(FakeLiveBackend())
+    async with app.run_test(size=(80, 24)) as pilot:
+        assert await wait_until(pilot, lambda: bool(app.screen.query("#auth-box")))
+        screen = app.screen
+        for selector in ("#auth-title", "#auth-input", "#btn-auth-submit", "#btn-auth-cancel"):
+            widget = screen.query_one(selector)
+            assert widget.region.height > 0, f"{selector} is not rendered"
+            assert widget.region.bottom <= 24, f"{selector} is below the fold"

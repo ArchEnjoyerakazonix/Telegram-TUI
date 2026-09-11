@@ -24,15 +24,18 @@ class LoginScreen(ModalScreen[bool]):
     DEFAULT_CSS = """
     LoginScreen { align: center middle; background: #000000 70%; }
     #auth-box {
-        width: 70;
+        width: 100%;
+        max-width: 70;
         height: auto;
-        padding: 2 3;
+        max-height: 100%;
+        overflow-y: auto;
+        padding: 1 2;
         background: #16161e;
         border: heavy #7aa2f7;
     }
     #auth-title { text-style: bold; color: #7aa2f7; margin-bottom: 1; }
     #auth-error { color: #f7768e; min-height: 1; margin-top: 1; }
-    #auth-hint { color: #a9b1d6; margin-top: 1; margin-bottom: 1; }
+    #auth-hint { color: #a9b1d6; margin-bottom: 1; }
     #auth-box Input {
         margin-bottom: 1;
         background: #1f2335;
@@ -63,8 +66,7 @@ class LoginScreen(ModalScreen[bool]):
                 yield Input(placeholder=placeholder, password=password, id="auth-input")
                 yield Static("", id="auth-error", markup=False)
                 yield Static(
-                    "Press Enter to submit, Esc to cancel.\n"
-                    "Confirmation code will arrive in Telegram or via SMS.",
+                    "Enter to submit, Esc to cancel. Code arrives in Telegram or by SMS.",
                     id="auth-hint",
                 )
                 yield Button("Continue (Enter)", id="btn-auth-submit", classes="auth-btn btn-primary")
@@ -140,9 +142,12 @@ class WelcomeScreen(ModalScreen[str]):
     DEFAULT_CSS = """
     WelcomeScreen { align: center middle; background: #000000 70%; }
     #welcome-box {
-        width: 70;
+        width: 100%;
+        max-width: 70;
         height: auto;
-        padding: 2 3;
+        max-height: 100%;
+        overflow-y: auto;
+        padding: 1 2;
         background: #16161e;
         border: heavy #b7e680;
     }
@@ -216,9 +221,12 @@ class ApiCredentialsScreen(ModalScreen[tuple[int, str] | None]):
     DEFAULT_CSS = """
     ApiCredentialsScreen { align: center middle; background: #000000 70%; }
     #api-box {
-        width: 72;
+        width: 100%;
+        max-width: 72;
         height: auto;
-        padding: 2 3;
+        max-height: 100%;
+        overflow-y: auto;
+        padding: 1 2;
         background: #16161e;
         border: heavy #7aa2f7;
     }

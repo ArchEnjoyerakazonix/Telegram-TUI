@@ -48,8 +48,12 @@ class TelegramTUI(App[None]):
     CSS = """
     #layout { height: 1fr; }
     #sidebar {
+        /* Never more than half the screen: a fixed 36 columns squeezed the
+           message panel to zero width on a narrow terminal, which crashed the
+           composer's text wrapping. */
         width: 36;
-        min-width: 24;
+        min-width: 16;
+        max-width: 50%;
         height: 1fr;
         background: #16161e;
         border-right: solid #2a2e3f;
