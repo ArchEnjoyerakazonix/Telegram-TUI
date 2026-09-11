@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from telegram_tui.app import TelegramTUI
@@ -165,3 +167,101 @@ async def test_read_only_channels_refuse_attachments(app, files):
 
     assert not isinstance(app.screen, AttachScreen)
     assert any("read-only" in w for w in warnings)
+
+
+# -- sending several files --------------------------------------------------
+
+
+async def queue_and_send(app, pilot, screen, paths, send_last=True):
+    """Queue every path but the last, which is left in the field for Send."""
+    field = screen.query_one(PathInput)
+    for path in paths[:-1]:
+        field.value = str(path)
+        field.focus()
+        await pilot.pause()
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+    field.value = str(paths[-1]) if send_last else ""
+    field.focus()
+    await pilot.pause()
+    await pilot.press("enter")
+    for _ in range(12):
+        await pilot.pause(0.05)
+
+
+async def test_several_files_are_all_sent(app, files):
+    app, pilot = app
+    app.query_one(Composer).load_text("three files")
+    screen = await open_picker(app, pilot)
+
+    await queue_and_send(
+        app, pilot, screen,
+        [files / "report.pdf", files / "holiday.jpg", files / "report.pdf"],
+    )
+
+    sent = app.engine.history(app.current_chat_id)[-2:]
+    assert [m.file_name for m in sent] == ["report.pdf", "holiday.jpg"], (
+        "the same file queued twice must only be sent once"
+    )
+
+
+async def test_only_the_first_of_a_batch_carries_the_caption(app, files):
+    app, pilot = app
+    app.query_one(Composer).load_text("look at these")
+    screen = await open_picker(app, pilot)
+
+    await queue_and_send(app, pilot, screen, [files / "report.pdf", files / "holiday.jpg"])
+
+    first, second = app.engine.history(app.current_chat_id)[-2:]
+    assert first.text == "look at these"
+    assert second.text == ""
+
+
+async def test_the_composer_is_cleared_once_for_the_whole_batch(app, files):
+    app, pilot = app
+    app.query_one(Composer).load_text("batch")
+    screen = await open_picker(app, pilot)
+
+    await queue_and_send(app, pilot, screen, [files / "report.pdf", files / "holiday.jpg"])
+
+    assert app.query_one(Composer).text == ""
+
+
+async def test_queueing_an_unreadable_path_adds_nothing(app, files):
+    app, pilot = app
+    screen = await open_picker(app, pilot)
+    field = screen.query_one(PathInput)
+
+    field.value = str(files / "not-here.txt")
+    field.focus()
+    await pilot.pause()
+    await pilot.press("ctrl+n")
+    await pilot.pause()
+
+    assert screen._queue == []
+    assert isinstance(app.screen, AttachScreen), "the picker stays open"
+
+
+async def test_sending_stops_at_the_first_failure(app, files):
+    app, pilot = app
+    calls: list[str] = []
+    original = app.engine.send_file
+
+    def failing(chat_id, path, **kwargs):
+        calls.append(Path(path).name)
+        if len(calls) == 2:
+            raise OSError("connection reset")
+        return original(chat_id, path, **kwargs)
+
+    app.engine.send_file = failing
+    notices: list[str] = []
+    app.notify = lambda msg, *a, **k: notices.append(str(msg))
+
+    screen = await open_picker(app, pilot)
+    await queue_and_send(
+        app, pilot, screen,
+        [files / "report.pdf", files / "holiday.jpg", files / "reports"],
+    )
+
+    assert len(calls) == 2, "the third file must not be attempted"
+    assert any("Failed to send" in n for n in notices), notices

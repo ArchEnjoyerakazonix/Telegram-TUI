@@ -58,10 +58,13 @@ class VisibleTree(DirectoryTree):
         return [path for path in paths if not path.name.startswith(".")]
 
 
-class AttachScreen(ModalScreen["tuple[Path, bool] | None"]):
-    """Pick a file to send, and whether to send it uncompressed."""
+class AttachScreen(ModalScreen["tuple[list[Path], bool] | None"]):
+    """Pick one or more files to send, and whether to send them uncompressed."""
 
-    BINDINGS = [("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+        Binding("ctrl+n", "queue", "Add another", show=False),
+    ]
 
     DEFAULT_CSS = """
     AttachScreen { align: center middle; background: #000000 70%; }
@@ -76,7 +79,8 @@ class AttachScreen(ModalScreen["tuple[Path, bool] | None"]):
         border: heavy #7aa2f7;
     }
     #attach-title { color: #7aa2f7; text-style: bold; margin-bottom: 1; }
-    #attach-info { color: #a9b1d6; height: 1; margin-bottom: 1; }
+    #attach-info { color: #a9b1d6; height: 1; }
+    #attach-queue { color: #b7e680; height: 1; margin-bottom: 1; }
     #attach-box Input {
         background: #1f2335;
         border: solid #3b4261;
@@ -97,6 +101,7 @@ class AttachScreen(ModalScreen["tuple[Path, bool] | None"]):
     def __init__(self, start_dir: Path | None = None) -> None:
         super().__init__()
         self._start_dir = Path(start_dir or Path.home())
+        self._queue: list[Path] = []
 
     def compose(self) -> ComposeResult:
         with Center():
@@ -106,9 +111,15 @@ class AttachScreen(ModalScreen["tuple[Path, bool] | None"]):
                     placeholder="Path to the file… (Tab completes)", id="attach-path"
                 )
                 yield Static("", id="attach-info", markup=False)
+                yield Static("", id="attach-queue", markup=False)
                 yield VisibleTree(self._start_dir, id="attach-tree")
                 yield Checkbox("Send as file (no compression)", id="attach-doc")
                 with Horizontal(id="attach-buttons"):
+                    yield Button(
+                        "Add another (Ctrl+N)",
+                        id="btn-attach-queue",
+                        classes="attach-btn btn-secondary",
+                    )
                     yield Button(
                         "Send (Enter)", id="btn-attach-send", classes="attach-btn btn-primary"
                     )
@@ -153,23 +164,58 @@ class AttachScreen(ModalScreen["tuple[Path, bool] | None"]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-attach-send":
             self._submit()
+        elif event.button.id == "btn-attach-queue":
+            self.action_queue()
         else:
             self.dismiss(None)
 
-    def _submit(self) -> None:
+    def action_queue(self) -> None:
+        """Put the file in the field aside and clear it for the next one."""
+        path = self._current_file()
+        if path is None:
+            return
+        if path not in self._queue:
+            self._queue.append(path)
         field = self.query_one(PathInput)
-        info = self.query_one("#attach-info", Static)
+        field.value = ""
+        field.focus()
+        self._show_queue()
+
+    def _show_queue(self) -> None:
+        line = self.query_one("#attach-queue", Static)
+        if not self._queue:
+            line.update("")
+            return
+        total = sum(p.stat().st_size for p in self._queue if p.is_file())
+        names = ", ".join(p.name for p in self._queue)
+        line.update(f"queued: {names}  ({len(self._queue)} · {format_size(total)})")
+
+    def _current_file(self) -> Path | None:
+        """The file named in the path field, if it is one."""
+        field = self.query_one(PathInput)
         raw = field.value.strip()
         if not raw:
-            info.update("enter a path, or pick a file from the tree")
-            field.focus()
-            return
+            return None
         path = Path(raw).expanduser()
         if not path.is_file():
             self._describe(raw)
             field.focus()
+            return None
+        return path
+
+    def _submit(self) -> None:
+        field = self.query_one(PathInput)
+        info = self.query_one("#attach-info", Static)
+        current = self._current_file()
+        files = list(self._queue)
+        if current is not None and current not in files:
+            files.append(current)
+        if not files:
+            if not field.value.strip():
+                info.update("enter a path, or pick a file from the tree")
+                field.focus()
             return
-        self.dismiss((path, self.query_one("#attach-doc", Checkbox).value))
+        self.dismiss((files, self.query_one("#attach-doc", Checkbox).value))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

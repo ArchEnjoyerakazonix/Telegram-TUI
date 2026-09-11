@@ -486,7 +486,7 @@ class TelegramTUI(App[None]):
         chosen = await self.push_screen_wait(AttachScreen())
         if not chosen:
             return
-        path, as_document = chosen
+        paths, as_document = chosen
 
         composer = self.query_one(Composer)
         caption = composer.text.strip()
@@ -494,28 +494,40 @@ class TelegramTUI(App[None]):
         if self.pending_reply and self.pending_reply[0] == self.current_chat_id:
             reply_to = self.pending_reply[1]
 
+        view = self.query_one(ChatView)
+        sent = 0
         try:
-            result = self.engine.send_file(
-                self.current_chat_id,
-                path,
-                caption=caption,
-                force_document=as_document,
-                reply_to=reply_to,
-                progress=self._upload_progress(path.name),
-            )
-            if inspect.isawaitable(result):
-                result = await result
-        except Exception as exc:  # noqa: BLE001
-            self.notify(f"Failed to send {path.name}: {exc}", severity="error", timeout=8)
-            return
+            for index, path in enumerate(paths, start=1):
+                label = path.name if len(paths) == 1 else f"{path.name} ({index}/{len(paths)})"
+                try:
+                    result = self.engine.send_file(
+                        self.current_chat_id,
+                        path,
+                        # Only the first of a batch carries the typed caption,
+                        # the way a Telegram album is captioned once.
+                        caption=caption if index == 1 else "",
+                        force_document=as_document,
+                        reply_to=reply_to if index == 1 else None,
+                        progress=self._upload_progress(label),
+                    )
+                    if inspect.isawaitable(result):
+                        result = await result
+                except Exception as exc:  # noqa: BLE001
+                    self.notify(f"Failed to send {path.name}: {exc}", severity="error", timeout=8)
+                    break
+                sent += 1
+                view.append_message(result)
         finally:
             self._clear_typing()
 
+        if not sent:
+            return
         composer.load_text("")
         self.clear_pending_reply()
-        self.query_one(ChatView).append_message(result)
         self.refresh_chat_list()
-        self.notify(f"📎 Sent {path.name}")
+        self.notify(
+            f"📎 Sent {paths[0].name}" if sent == 1 else f"📎 Sent {sent} files"
+        )
 
     def _upload_progress(self, name: str):
         """Telethon progress callback that reports into the header subtitle."""
