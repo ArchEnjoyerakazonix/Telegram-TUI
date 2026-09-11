@@ -504,18 +504,21 @@ async def _photo_widget(size):
         yield app.query_one(ChatView), app.query(PhotoWidget).first()
 
 
-async def test_photo_preview_is_capped_to_half_the_feed():
+async def test_photo_preview_fits_inside_the_feed():
     async for feed, photo in _photo_widget((120, 40)):
-        _cols, rows = photo._preview_box()
-        assert rows <= feed.size.height // 2, "a preview must not swallow the feed"
+        cols, rows = photo._preview_box()
+        assert cols <= feed.size.width, "a preview must not overflow sideways"
+        assert rows <= feed.size.height, "a preview must not be taller than the feed"
 
 
-async def test_photo_preview_shrinks_with_the_terminal():
+async def test_photo_preview_never_grows_on_a_smaller_terminal():
     async for _feed, photo in _photo_widget((120, 40)):
-        big = photo._preview_box()
-    async for _feed, photo in _photo_widget((90, 24)):
-        small = photo._preview_box()
-    assert small[0] < big[0] and small[1] < big[1]
+        roomy = photo._preview_box()
+    async for _feed, photo in _photo_widget((60, 16)):
+        cramped = photo._preview_box()
+
+    assert cramped[0] <= roomy[0] and cramped[1] <= roomy[1]
+    assert cramped != roomy, "a much smaller terminal must clamp the box"
 
 
 async def test_z_expands_and_collapses_a_photo(app):

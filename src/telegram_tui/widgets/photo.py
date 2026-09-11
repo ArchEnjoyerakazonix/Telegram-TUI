@@ -11,9 +11,12 @@ from textual.widgets import Static
 from ..media import render_photo
 from ..models import Message, format_size
 
-#: Rows a preview gets before the reader asks for more. Kept small so a photo
-#: is something you glance at without losing the conversation around it.
-COMPACT_ROWS = 10
+# Chafa fits the image inside the box, so whichever side binds decides the
+# result: a portrait photo is limited by rows, a landscape one by columns. A box
+# of 64x10 renders a portrait 720x1280 as 12 columns wide — an unreadable
+# sliver — so the compact box has to stay reasonably tall to be worth drawing.
+COMPACT_COLS, COMPACT_ROWS = 44, 18
+EXPANDED_COLS, EXPANDED_ROWS = 72, 34
 
 
 class PhotoWidget(Static):
@@ -43,19 +46,20 @@ class PhotoWidget(Static):
         self.run_worker(self._load(), exit_on_error=False, group="photo")
 
     def _preview_box(self) -> tuple[int, int]:
-        """Cell box handed to chafa.
-
-        Compact by default; expanded still stops at half the visible feed, since
-        an uncapped preview pushes the whole conversation off the screen.
-        """
-        cols = max(24, min(64, self.app.size.width - 48))
+        """Cell box handed to chafa, clamped to what the feed can actually show."""
         feed = self.screen.query("#messages")
-        feed_height = feed.first().size.height if feed else self.app.size.height
-        if self.expanded:
-            rows = max(8, min(int(cols * 0.5), feed_height // 2))
+        if feed:
+            available_cols = feed.first().size.width - 4
+            available_rows = feed.first().size.height
         else:
-            rows = max(5, min(COMPACT_ROWS, feed_height // 3))
-        return cols, rows
+            available_cols = self.app.size.width - 8
+            available_rows = self.app.size.height
+
+        if self.expanded:
+            cols, rows = EXPANDED_COLS, EXPANDED_ROWS
+        else:
+            cols, rows = COMPACT_COLS, COMPACT_ROWS
+        return min(cols, max(20, available_cols)), min(rows, max(6, available_rows))
 
     def _caption(self) -> str:
         size = format_size(self._message.file_size)

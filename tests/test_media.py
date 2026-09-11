@@ -1,5 +1,7 @@
 """Tests for media support: mpv voice playback and chafa photo rendering."""
 
+import re
+import shutil
 import subprocess
 import wave
 
@@ -12,6 +14,12 @@ from telegram_tui.media import (
     render_photo,
     write_mock_photo,
     write_mock_voice,
+)
+from telegram_tui.widgets.photo import (
+    COMPACT_COLS,
+    COMPACT_ROWS,
+    EXPANDED_COLS,
+    EXPANDED_ROWS,
 )
 
 
@@ -141,3 +149,58 @@ def test_render_photo_chafa_failure_returns_none(monkeypatch, tmp_path):
     monkeypatch.setattr(media.shutil, "which", lambda name: "/usr/bin/chafa")
     monkeypatch.setattr(media.subprocess, "run", fake_run)
     assert render_photo(img) is None
+
+
+# -- preview geometry --------------------------------------------------------
+
+needs_chafa = pytest.mark.skipif(
+    shutil.which("chafa") is None, reason="chafa is not installed"
+)
+
+_ESCAPES = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
+def rendered_size(path, cols, rows):
+    """Actual (columns, rows) chafa produced for a box."""
+    output = render_photo(path, cols, rows)
+    assert output is not None
+    lines = output.rstrip("\n").split("\n")
+    return max(len(_ESCAPES.sub("", line)) for line in lines), len(lines)
+
+
+@needs_chafa
+def test_compact_preview_keeps_a_portrait_photo_legible(tmp_path):
+    """Chafa fits inside the box, so a short box crushes tall photos.
+
+    A 64x10 compact box rendered a 720x1280 photo twelve columns wide — a
+    sliver you could not make anything out in.
+    """
+    portrait = write_mock_photo(tmp_path / "portrait.png", 720, 1280)
+
+    width, _height = rendered_size(portrait, COMPACT_COLS, COMPACT_ROWS)
+
+    assert width >= 18, "a portrait preview must be wide enough to read"
+
+
+@needs_chafa
+def test_previews_stay_inside_the_box_they_are_given(tmp_path):
+    for name, (w, h) in {
+        "portrait.png": (720, 1280),
+        "landscape.png": (1280, 720),
+        "square.png": (800, 800),
+    }.items():
+        image = write_mock_photo(tmp_path / name, w, h)
+        for cols, rows in ((COMPACT_COLS, COMPACT_ROWS), (EXPANDED_COLS, EXPANDED_ROWS)):
+            width, height = rendered_size(image, cols, rows)
+            assert width <= cols, f"{name} overflowed {cols} columns"
+            assert height <= rows + 1, f"{name} overflowed {rows} rows"
+
+
+@needs_chafa
+def test_expanding_makes_a_photo_bigger_in_both_directions(tmp_path):
+    portrait = write_mock_photo(tmp_path / "portrait.png", 720, 1280)
+
+    compact = rendered_size(portrait, COMPACT_COLS, COMPACT_ROWS)
+    expanded = rendered_size(portrait, EXPANDED_COLS, EXPANDED_ROWS)
+
+    assert expanded[0] > compact[0] and expanded[1] > compact[1]
