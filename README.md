@@ -4,7 +4,7 @@
 [![Textual](https://img.shields.io/badge/TUI-Textual-00d2ff.svg?style=flat-square)](https://textual.textualize.io/)
 [![Telethon](https://img.shields.io/badge/MTProto-Telethon-2ca5e0.svg?style=flat-square&logo=telegram&logoColor=white)](https://github.com/LonamiWebs/Telethon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![Tests: 215 Passed](https://img.shields.io/badge/tests-215%20passed-brightgreen.svg?style=flat-square)](tests/)
+[![Tests: 238 Passed](https://img.shields.io/badge/tests-238%20passed-brightgreen.svg?style=flat-square)](tests/)
 
 A modern, high-performance, keyboard-driven terminal client for Telegram built with [Textual](https://textual.textualize.io/) and [Telethon](https://github.com/LonamiWebs/Telethon).
 
@@ -16,7 +16,7 @@ Features a high-contrast three-panel interface, native terminal media rendering 
 
 - **Seamless First-Run Onboarding**: Automatic terminal wizard detects missing API keys and prompts you to input credentials or explore in Mock mode. Generates `~/.config/telegram-tui/config.toml` automatically.
 - **Full In-Terminal Media Pipeline**:
-  - **Photos**: Rendered directly in message feed using `chafa` (auto-detecting Kitty graphics protocol, Sixel, or 24-bit half-blocks).
+  - **Photos**: True pixels in kitty via its graphics protocol (Unicode placeholders, so Textual's compositor stays in charge), falling back to `chafa` half-blocks everywhere else. `z` expands a preview.
   - **Voice Messages**: Rendered with dynamic Unicode audio waveforms (` ▂▃▅▆▇`) and direct background playback via `mpv` (hotkey `v`).
   - **Video Notes (Circles)**: One-key popout to floating PIP window via `mpv` (hotkey `o` or `v`).
   - **Stickers & Reactions**: Rendered with emoji fallbacks (`🎭 sticker: [emoji]`) and quick numeric reactions (`1`–`5`: 👍, ❤️, 🔥, 🎉, 🤔).
@@ -186,6 +186,8 @@ telegram-tui/
 │   ├── auth.py                # Onboarding & Auth screens (Credentials, Phone, 2FA)
 │   ├── config.py              # TOML config loader, env parser & persistence
 │   ├── engine.py              # Deterministic mock engine for offline testing
+│   ├── kitty_graphics.py      # Kitty graphics protocol: transmit + placeholders
+│   ├── kitty_diacritics.py    # Generated row/column diacritic table
 │   ├── media.py               # Chafa terminal rendering & MPV subprocess manager
 │   ├── models.py              # Pure data models (Chat, Message, Media, Reaction)
 │   ├── telethon_backend.py    # Production Telethon MTProto client implementation
@@ -203,6 +205,7 @@ telegram-tui/
 │   ├── test_cli.py            # Entry point: config errors & --mode overrides
 │   ├── test_config.py         # Config priority, parsing & persistence tests
 │   ├── test_engine.py         # Mock engine state & conversation simulation tests
+│   ├── test_kitty_graphics.py # Graphics protocol commands & placeholder grid
 │   ├── test_features_mvp.py   # MVP feature validation tests
 │   ├── test_media.py          # Chafa protocol detection & MPV invocation tests
 │   └── test_ui.py             # Textual Pilot end-to-end user journey tests
@@ -224,7 +227,7 @@ pytest tests/
 pytest -v tests/
 ```
 
-**215 tests** passing across all subsystems:
+**238 tests** passing across all subsystems:
 - ✅ **Adversarial & Resilience**: Simulates MTProto FloodWait, RPC errors, corrupted credentials, missing media tools, and network drops.
 - ✅ **Authentication**: Tests full onboarding state machine: phone entry, verification code, invalid codes, 2FA cloud passwords, and dismissal.
 - ✅ **Media Processing**: Validates waveform rendering, MPV background process spawning, and Chafa graphics protocol negotiation.

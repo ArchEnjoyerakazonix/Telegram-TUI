@@ -95,6 +95,8 @@ class MessageWidget(Vertical):
     MessageWidget.-selected Static.msg-header { text-style: bold; }
     MessageWidget.-hit { background: $warning 15%; }
     MessageWidget.-miss { opacity: 0.35; }
+    /* An image id travels in the foreground colour; dimming would rewrite it. */
+    MessageWidget.-miss PhotoWidget { opacity: 1; }
     MessageWidget .msg-reply {
         border-left: thick $accent;
         padding-left: 1;

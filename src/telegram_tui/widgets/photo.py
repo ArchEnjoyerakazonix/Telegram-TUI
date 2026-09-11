@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.text import Text
 from textual.widgets import Static
 
+from .. import kitty_graphics
 from ..media import render_photo
 from ..models import Message, format_size
 
@@ -37,6 +38,7 @@ class PhotoWidget(Static):
         #: A video or GIF cannot play in the feed, so show its poster frame.
         self._thumbnail = thumbnail
         self._path: Path | None = None
+        self._kitty_id: int | None = None
         self.expanded = False
 
     def on_mount(self) -> None:
@@ -63,6 +65,43 @@ class PhotoWidget(Static):
             cols, rows = COMPACT_COLS, COMPACT_ROWS
         return min(cols, max(20, available_cols)), min(rows, max(6, available_rows))
 
+    async def _render_with_kitty(self, loop, cols: int, rows: int) -> bool:
+        """Draw real pixels when the terminal can, instead of block characters."""
+        if not kitty_graphics.is_supported():
+            return False
+        self._release_kitty_image()
+
+        png = await loop.run_in_executor(
+            None, kitty_graphics.as_png, self._path, Path(self._path).with_suffix(".png")
+        )
+        if png is None:
+            return False
+        size = await loop.run_in_executor(None, kitty_graphics.png_size, png)
+        cols, rows = kitty_graphics.fit_cells(size, cols, rows)
+
+        image_id = kitty_graphics.IMAGE_IDS.allocate()
+        sent = await loop.run_in_executor(
+            None, kitty_graphics.write_to_terminal,
+            kitty_graphics.transmit(png, image_id, cols, rows),
+        )
+        if not sent:
+            kitty_graphics.IMAGE_IDS.release(image_id)
+            return False
+        self._kitty_id = image_id
+        self.update(kitty_graphics.placeholder_text(image_id, cols, rows))
+        return True
+
+    def _release_kitty_image(self) -> None:
+        """Tell the terminal it can drop the picture we were showing."""
+        if self._kitty_id is None:
+            return
+        kitty_graphics.write_to_terminal(kitty_graphics.delete(self._kitty_id))
+        kitty_graphics.IMAGE_IDS.release(self._kitty_id)
+        self._kitty_id = None
+
+    def on_unmount(self) -> None:
+        self._release_kitty_image()
+
     def _caption(self) -> str:
         if self._thumbnail:
             return ""
@@ -87,6 +126,9 @@ class PhotoWidget(Static):
 
         cols, rows = self._preview_box()
         loop = asyncio.get_running_loop()
+        if await self._render_with_kitty(loop, cols, rows):
+            return
+
         ansi = await loop.run_in_executor(
             None,
             render_photo,
